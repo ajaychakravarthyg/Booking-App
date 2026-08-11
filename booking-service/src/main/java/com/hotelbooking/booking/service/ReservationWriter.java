@@ -73,6 +73,9 @@ public class ReservationWriter {
                 .roomId(room.id())
                 .roomNumber(room.roomNumber())
                 .roomType(room.type())
+                .hotelId(room.hotelId())
+                .hotelName(room.hotelName())
+                .hotelCity(room.hotelCity())
                 .pricePerNight(room.pricePerNight())
                 .checkInDate(checkIn)
                 .checkOutDate(checkOut)
@@ -81,8 +84,9 @@ public class ReservationWriter {
                 .status(BookingStatus.CONFIRMED)
                 .build());
 
-        log.info("Confirmed booking id={} room={} guest={} {}→{} ({} nights, total {})",
-                booking.getId(), room.roomNumber(), guest.email(), checkIn, checkOut, nights, totalPrice);
+        log.info("Confirmed booking id={} room={} at '{}' ({}) guest={} {}→{} ({} nights, total {})",
+                booking.getId(), room.roomNumber(), room.hotelName(), room.hotelCity(),
+                guest.email(), checkIn, checkOut, nights, totalPrice);
         return booking;
     }
 }

@@ -1,9 +1,12 @@
 package com.hotelbooking.booking.service;
 
+import com.hotelbooking.booking.client.HotelClient;
+import com.hotelbooking.booking.client.HotelView;
 import com.hotelbooking.booking.client.RoomClient;
 import com.hotelbooking.booking.client.RoomView;
 import com.hotelbooking.booking.domain.Booking;
 import com.hotelbooking.booking.domain.BookingStatus;
+import com.hotelbooking.booking.dto.AvailableHotelResponse;
 import com.hotelbooking.booking.dto.AvailableRoomResponse;
 import com.hotelbooking.booking.dto.BookingRequest;
 import com.hotelbooking.booking.dto.BookingResponse;
@@ -26,9 +29,11 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 @Slf4j
@@ -40,6 +45,7 @@ public class BookingService {
     private final ReservationWriter reservationWriter;
     private final RoomLockRegistrar roomLockRegistrar;
     private final RoomClient roomClient;
+    private final HotelClient hotelClient;
 
     @Value("${app.booking.max-nights:30}")
     private int maxNights;
@@ -91,7 +97,9 @@ public class BookingService {
      * result simply carries no stay total.
      */
     @Transactional(readOnly = true)
-    public List<AvailableRoomResponse> searchAvailable(LocalDate checkIn,
+    public List<AvailableRoomResponse> searchAvailable(Long hotelId,
+                                                       String city,
+                                                       LocalDate checkIn,
                                                        LocalDate checkOut,
                                                        String type,
                                                        BigDecimal minPrice,
@@ -99,8 +107,11 @@ public class BookingService {
                                                        Integer guests,
                                                        String q) {
 
-        // Only in-service rooms are offered to guests.
-        List<RoomView> catalog = roomClient.search(type, minPrice, maxPrice, guests, q, true);
+        // Only in-service rooms in listed hotels are offered to guests. Narrowing by
+        // hotel or city is pushed down to room-service rather than filtered here, so this
+        // service receives a handful of rooms instead of the whole catalogue.
+        List<RoomView> catalog =
+                roomClient.search(hotelId, city, type, minPrice, maxPrice, guests, q, true);
 
         if (checkIn == null && checkOut == null) {
             return catalog.stream()
@@ -126,6 +137,120 @@ public class BookingService {
                         room.pricePerNight()
                                 .multiply(BigDecimal.valueOf(nights))
                                 .setScale(2, RoundingMode.HALF_UP)))
+                .toList();
+    }
+
+    /**
+     * Suggests properties in a destination that genuinely have something free.
+     *
+     * <p>This is the answer to "which hotels in Lisbon can I actually book next weekend",
+     * which neither service can give alone: room-service knows the properties and their rooms
+     * but nothing about reservations, and this service knows reservations but holds no
+     * catalogue. So it fetches both halves from room-service — the city's properties and its
+     * offerable rooms — subtracts its own overlapping bookings, and folds what is left up to
+     * the hotel level.
+     *
+     * <p>Two calls rather than one, deliberately: the alternative was flattening each hotel's
+     * description and facilities onto every room, repeating a paragraph of prose across all of
+     * a hotel's rooms in every response.
+     *
+     * <p>A hotel with nothing free is omitted rather than listed as unavailable — a suggestion
+     * list exists to be acted on, and making a guest scan eight sold-out properties to find
+     * one bookable is the wrong shape. Scarcity still shows through {@code availableRooms}
+     * against {@code totalRooms}.
+     *
+     * <p>Ranked by star rating then cheapest available rate, so the most appealing option
+     * leads and ties break predictably rather than by database order.
+     */
+    @Transactional(readOnly = true)
+    public List<AvailableHotelResponse> suggestHotels(String city,
+                                                      LocalDate checkIn,
+                                                      LocalDate checkOut,
+                                                      Integer guests,
+                                                      BigDecimal maxPrice,
+                                                      Integer minStars) {
+
+        if (city == null || city.isBlank()) {
+            throw new BadRequestException("A city is required to suggest hotels");
+        }
+        String destination = city.trim();
+
+        Integer nights = null;
+        Set<Long> booked = Set.of();
+        if (checkIn != null || checkOut != null) {
+            if (checkIn == null || checkOut == null) {
+                throw new BadRequestException(
+                        "Provide both checkIn and checkOut to filter by date, or neither");
+            }
+            nights = validateStay(checkIn, checkOut);
+            // One query for every clashing room across the whole city, rather than per hotel.
+            booked = bookingRepository.findBookedRoomIds(checkIn, checkOut);
+        }
+
+        // Only listed properties, and only in-service rooms belonging to them.
+        List<HotelView> hotels = hotelClient.search(destination, minStars, null, true);
+        if (hotels.isEmpty()) {
+            return List.of();
+        }
+        List<RoomView> rooms =
+                roomClient.search(null, destination, null, null, maxPrice, guests, null, true);
+
+        Map<Long, List<RoomView>> freeByHotel = new HashMap<>();
+        Map<Long, Integer> totalByHotel = new HashMap<>();
+
+        for (RoomView room : rooms) {
+            if (room.hotelId() == null) {
+                // Should not happen; skipping beats failing a whole search on one bad row.
+                log.warn("Room {} came back with no hotelId — omitted from hotel suggestions",
+                        room.id());
+                continue;
+            }
+            totalByHotel.merge(room.hotelId(), 1, Integer::sum);
+            if (!booked.contains(room.id())) {
+                freeByHotel.computeIfAbsent(room.hotelId(), key -> new ArrayList<>()).add(room);
+            }
+        }
+
+        final Integer stayNights = nights;
+        return hotels.stream()
+                // Drop properties with nothing bookable. minStars was already applied by
+                // room-service, so anything surviving here is genuinely offerable.
+                .filter(hotel -> freeByHotel.containsKey(hotel.id()))
+                .map(hotel -> {
+                    List<RoomView> free = freeByHotel.get(hotel.id());
+                    RoomView cheapest = free.stream()
+                            .min(Comparator.comparing(RoomView::pricePerNight))
+                            .orElseThrow();
+
+                    BigDecimal stayTotal = stayNights == null ? null : cheapest.pricePerNight()
+                            .multiply(BigDecimal.valueOf(stayNights))
+                            .setScale(2, RoundingMode.HALF_UP);
+
+                    return new AvailableHotelResponse(
+                            hotel.id(),
+                            hotel.name(),
+                            hotel.city(),
+                            hotel.country(),
+                            hotel.starRating(),
+                            hotel.imageUrl(),
+                            hotel.description(),
+                            hotel.amenities() == null ? List.of() : hotel.amenities(),
+                            free.size(),
+                            totalByHotel.getOrDefault(hotel.id(), free.size()),
+                            // The cheapest AVAILABLE rate, not the property's headline price —
+                            // that one may belong to a room already taken for these dates.
+                            cheapest.pricePerNight(),
+                            stayTotal,
+                            free.stream().map(RoomView::capacity)
+                                    .filter(Objects::nonNull)
+                                    .max(Integer::compareTo)
+                                    .orElse(null),
+                            stayNights);
+                })
+                .sorted(Comparator
+                        .comparing(AvailableHotelResponse::starRating,
+                                Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(AvailableHotelResponse::cheapestPricePerNight))
                 .toList();
     }
 

@@ -47,6 +47,15 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/rooms").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/rooms/*").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/rooms/*").hasRole("ADMIN")
+
+                        // Destinations and hotels: browsing is public so a visitor can search
+                        // a city before signing up; only mutation is restricted.
+                        .requestMatchers(HttpMethod.GET, "/api/cities").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/hotels", "/api/hotels/*",
+                                "/api/hotels/*/rooms").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/hotels").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.PUT, "/api/hotels/*").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/hotels/*").hasRole("ADMIN")
                         .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated())

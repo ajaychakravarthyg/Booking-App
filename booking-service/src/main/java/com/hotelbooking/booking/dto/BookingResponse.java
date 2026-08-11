@@ -18,6 +18,11 @@ public record BookingResponse(
         Long roomId,
         String roomNumber,
         String roomType,
+        @Schema(description = "The property, captured when the booking was made — unaffected "
+                + "by the hotel later being renamed or de-listed")
+        Long hotelId,
+        String hotelName,
+        String hotelCity,
         @Schema(description = "Nightly rate at the time of booking — unaffected by later "
                 + "catalog price changes")
         BigDecimal pricePerNight,
@@ -47,6 +52,9 @@ public record BookingResponse(
                 booking.getRoomId(),
                 booking.getRoomNumber(),
                 booking.getRoomType(),
+                booking.getHotelId(),
+                booking.getHotelName(),
+                booking.getHotelCity(),
                 booking.getPricePerNight(),
                 booking.getCheckInDate(),
                 booking.getCheckOutDate(),

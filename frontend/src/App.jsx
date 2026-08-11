@@ -3,7 +3,9 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { Navbar } from '@/components/Navbar'
 import { RequireAdmin, RequireAuth } from '@/components/RouteGuards'
 import { PageLoader } from '@/components/ui/Feedback'
-import Rooms from '@/pages/Rooms'
+import Home from '@/pages/Home'
+import HotelResults from '@/pages/HotelResults'
+import HotelDetails from '@/pages/HotelDetails'
 import RoomDetails from '@/pages/RoomDetails'
 import Login from '@/pages/Login'
 import Register from '@/pages/Register'
@@ -30,7 +32,10 @@ export default function App() {
       <main id="main" className="flex-1">
         <Suspense fallback={<PageLoader />}>
           <Routes>
-            <Route path="/" element={<Rooms />} />
+            {/* city → hotels → rooms → book */}
+            <Route path="/" element={<Home />} />
+            <Route path="/search" element={<HotelResults />} />
+            <Route path="/hotels/:id" element={<HotelDetails />} />
             <Route path="/rooms/:id" element={<RoomDetails />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
@@ -53,8 +58,10 @@ export default function App() {
               }
             />
 
-            {/* Legacy path kept working rather than 404ing anyone's bookmark. */}
-            <Route path="/rooms" element={<Navigate to="/" replace />} />
+            {/* Legacy paths kept working rather than 404ing anyone's bookmark. /rooms was
+                the room list before the catalogue grew to multiple properties. */}
+            <Route path="/rooms" element={<Navigate to="/search" replace />} />
+            <Route path="/hotels" element={<Navigate to="/search" replace />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
@@ -63,7 +70,7 @@ export default function App() {
       <footer className="border-t border-border py-6">
         <div className="mx-auto max-w-7xl px-4 text-center text-xs text-muted-foreground sm:px-6 lg:px-8">
           <p>
-            Aurora Grand — a 3-tier microservices demo. React → API gateway → auth / room /
+            A 3-tier microservices hotel booking platform. React → API gateway → auth / room /
             booking services → PostgreSQL.
           </p>
           <p className="mt-1">

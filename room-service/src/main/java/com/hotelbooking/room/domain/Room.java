@@ -5,11 +5,16 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
+import jakarta.persistence.ForeignKey;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -26,8 +31,13 @@ import java.time.Instant;
 @Entity
 @Table(
         name = "rooms",
+        // Room numbers are unique WITHIN a hotel, not globally — every property in the
+        // world has a room 101. A global unique index (which this had while the system
+        // modelled a single hotel) would reject the second hotel's 101 outright.
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_rooms_hotel_room_number", columnNames = {"hotel_id", "room_number"}),
         indexes = {
-                @Index(name = "idx_rooms_room_number", columnList = "room_number", unique = true),
+                @Index(name = "idx_rooms_hotel", columnList = "hotel_id"),
                 @Index(name = "idx_rooms_type", columnList = "type"),
                 @Index(name = "idx_rooms_price", columnList = "price_per_night")
         }
@@ -44,7 +54,21 @@ public class Room {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "room_number", nullable = false, unique = true, length = 20)
+    /**
+     * The owning property.
+     *
+     * <p>A real association, unlike the ids in booking-service — hotels and rooms live in
+     * the same schema and are owned by the same service, so the database can enforce the
+     * relationship. Fetched lazily; the DTO layer pulls only the few hotel fields the
+     * client needs, which avoids serialising the whole property behind every room.
+     */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "hotel_id", nullable = false,
+            foreignKey = @ForeignKey(name = "fk_rooms_hotel"))
+    private Hotel hotel;
+
+    /** Unique within the hotel, not globally — see the table constraint above. */
+    @Column(name = "room_number", nullable = false, length = 20)
     private String roomNumber;
 
     @Enumerated(EnumType.STRING)

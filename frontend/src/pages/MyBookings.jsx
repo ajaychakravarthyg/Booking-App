@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { CalendarX, Hotel, Moon } from 'lucide-react'
+import { CalendarX, Hotel, MapPin, Moon } from 'lucide-react'
 import { bookingsApi, normalizeError } from '@/lib/api'
 import { Button, buttonClasses } from '@/components/ui/Button'
 import { Card, CardContent } from '@/components/ui/Card'
@@ -105,8 +105,21 @@ export default function MyBookings() {
                       </div>
 
                       <h2 className="mt-2 text-lg font-semibold leading-snug">
-                        {booking.roomType} Room {booking.roomNumber}
+                        {booking.hotelName ?? `${booking.roomType} Room ${booking.roomNumber}`}
                       </h2>
+
+                      {booking.hotelName && (
+                        <p className="mt-0.5 text-sm text-muted-foreground">
+                          {booking.hotelCity && (
+                            <span className="inline-flex items-center gap-1.5">
+                              <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                              {booking.hotelCity}
+                              <span aria-hidden="true">·</span>
+                            </span>
+                          )}{' '}
+                          {booking.roomType} room {booking.roomNumber}
+                        </p>
+                      )}
 
                       <p className="mt-1.5 text-sm text-muted-foreground">
                         {formatDate(booking.checkInDate)} → {formatDate(booking.checkOutDate)}

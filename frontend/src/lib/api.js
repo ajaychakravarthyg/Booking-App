@@ -147,6 +147,21 @@ export const usersApi = {
   remove: (id) => api.delete(`/api/users/${id}`),
 }
 
+/** Destinations — the derived city list behind the search autocomplete. */
+export const citiesApi = {
+  list: (params) => api.get('/api/cities', { params }),
+}
+
+/** Properties. Reads are public; writes need an ADMIN token. */
+export const hotelsApi = {
+  list: (params) => api.get('/api/hotels', { params }),
+  get: (id) => api.get(`/api/hotels/${id}`),
+  rooms: (id) => api.get(`/api/hotels/${id}/rooms`),
+  create: (payload) => api.post('/api/hotels', payload),
+  update: (id, payload) => api.put(`/api/hotels/${id}`, payload),
+  remove: (id) => api.delete(`/api/hotels/${id}`),
+}
+
 export const roomsApi = {
   list: (params) => api.get('/api/rooms', { params }),
   get: (id) => api.get(`/api/rooms/${id}`),
@@ -158,6 +173,14 @@ export const roomsApi = {
 }
 
 export const bookingsApi = {
+  /**
+   * Hotels in a city that genuinely have rooms free for the dates.
+   *
+   * Not the same as hotelsApi.list — that one is date-blind and its `priceFrom` may quote a
+   * room already taken. This is the endpoint the destination search uses.
+   */
+  suggestHotels: (params) => api.get('/api/bookings/search/hotels', { params }),
+
   /** Date-aware room search — the catalog minus anything already reserved. */
   search: (params) => api.get('/api/bookings/search', { params }),
   checkAvailability: (params) => api.get('/api/bookings/availability', { params }),

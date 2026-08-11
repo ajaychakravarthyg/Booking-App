@@ -133,7 +133,7 @@ export function BookingsPanel({ onChanged }) {
                 <tr>
                   <th scope="col" className="px-4 py-3 font-semibold">#</th>
                   <th scope="col" className="px-4 py-3 font-semibold">Guest</th>
-                  <th scope="col" className="px-4 py-3 font-semibold">Room</th>
+                  <th scope="col" className="px-4 py-3 font-semibold">Hotel &amp; room</th>
                   <th scope="col" className="px-4 py-3 font-semibold">Stay</th>
                   <th scope="col" className="px-4 py-3 font-semibold">Nights</th>
                   <th scope="col" className="px-4 py-3 font-semibold">Total</th>
@@ -158,9 +158,16 @@ export function BookingsPanel({ onChanged }) {
                           roomNumber={booking.roomNumber}
                           size={36}
                         />
-                        <div>
-                          <div className="font-medium">{booking.roomNumber}</div>
-                          <div className="text-xs text-muted-foreground">{booking.roomType}</div>
+                        <div className="min-w-0">
+                          {/* Hotel first: room numbers repeat across properties, so the
+                              number alone does not identify the stay. */}
+                          <div className="truncate font-medium">
+                            {booking.hotelName ?? '—'}
+                          </div>
+                          <div className="truncate text-xs text-muted-foreground">
+                            {booking.hotelCity ? `${booking.hotelCity} · ` : ''}
+                            {booking.roomType} {booking.roomNumber}
+                          </div>
                         </div>
                       </div>
                     </td>

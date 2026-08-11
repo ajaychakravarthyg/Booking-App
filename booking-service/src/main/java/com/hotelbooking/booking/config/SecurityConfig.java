@@ -39,7 +39,8 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         // Public availability lookups.
-                        .requestMatchers(HttpMethod.GET, "/api/bookings/search", "/api/bookings/availability")
+                        .requestMatchers(HttpMethod.GET, "/api/bookings/search",
+                                "/api/bookings/search/hotels", "/api/bookings/availability")
                             .permitAll()
                         // Listed before the generic rules so the admin-only paths are not
                         // swallowed by the authenticated-user matchers below.

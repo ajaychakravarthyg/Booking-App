@@ -45,7 +45,8 @@ import java.time.LocalDate;
                 // The overlap query filters on exactly these three columns.
                 @Index(name = "idx_bookings_room_dates",
                         columnList = "room_id, check_in_date, check_out_date"),
-                @Index(name = "idx_bookings_status", columnList = "status")
+                @Index(name = "idx_bookings_status", columnList = "status"),
+                @Index(name = "idx_bookings_hotel", columnList = "hotel_id")
         }
 )
 @EntityListeners(AuditingEntityListener.class)
@@ -70,7 +71,7 @@ public class Booking {
     @Column(name = "user_name", nullable = false, length = 120)
     private String userName;
 
-    // ── Room snapshot (owner lives in room-service) ───────────────────────────────
+    // ── Room and property snapshot (owner lives in room-service) ──────────────────
     @Column(name = "room_id", nullable = false)
     private Long roomId;
 
@@ -79,6 +80,24 @@ public class Booking {
 
     @Column(name = "room_type", nullable = false, length = 20)
     private String roomType;
+
+    /**
+     * Which property the stay was at.
+     *
+     * <p>Snapshotted for the same reason as the price: a guest's booking history must still
+     * say "The Riverside Grand, Lisbon" after the hotel is renamed, re-listed under new
+     * management, or de-listed entirely. It also means rendering "my bookings" needs no call
+     * into room-service — which matters now that a room number alone ("101") is meaningless
+     * without knowing whose 101 it was.
+     */
+    @Column(name = "hotel_id")
+    private Long hotelId;
+
+    @Column(name = "hotel_name", length = 150)
+    private String hotelName;
+
+    @Column(name = "hotel_city", length = 100)
+    private String hotelCity;
 
     /** The rate at the moment of booking. Later catalog edits must not change it. */
     @Column(name = "price_per_night", nullable = false, precision = 10, scale = 2)

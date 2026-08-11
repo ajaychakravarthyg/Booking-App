@@ -2,15 +2,18 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   BedDouble,
+  Building2,
   CalendarCheck,
   CalendarRange,
   DollarSign,
   LayoutDashboard,
+  MapPin,
   Users,
 } from 'lucide-react'
 import { bookingsApi, normalizeError, roomsApi, usersApi } from '@/lib/api'
 import { StatCard } from '@/components/admin/StatCard'
 import { ArrivalsChart, RevenueChart, RoomTypeChart } from '@/components/admin/DashboardCharts'
+import { HotelsPanel } from '@/components/admin/HotelsPanel'
 import { RoomsPanel } from '@/components/admin/RoomsPanel'
 import { BookingsPanel } from '@/components/admin/BookingsPanel'
 import { UsersPanel } from '@/components/admin/UsersPanel'
@@ -22,6 +25,9 @@ import { cn } from '@/lib/utils'
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+  // Hotels before rooms: a room cannot be created until a property exists, so the tab order
+  // mirrors the order the work has to happen in.
+  { id: 'hotels', label: 'Hotels', icon: Building2 },
   { id: 'rooms', label: 'Rooms', icon: BedDouble },
   { id: 'bookings', label: 'Bookings', icon: CalendarRange },
   { id: 'users', label: 'Users', icon: Users },
@@ -89,7 +95,7 @@ export default function AdminDashboard() {
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <PageHero
         image={HERO.admin}
-        eyebrow="Aurora Grand · Operations"
+        eyebrow="Staylo · Operations"
         title="Admin dashboard"
         description="Figures below are composed in the browser from three separate services — auth, rooms and bookings — each queried independently."
         height="h-40 sm:h-44"
@@ -167,14 +173,16 @@ export default function AdminDashboard() {
                   tone="warning"
                 />
                 <StatCard
-                  label="Rooms"
-                  value={rooms?.totalRooms ?? '—'}
+                  label="Properties"
+                  value={rooms?.totalHotels ?? '—'}
                   hint={
                     rooms
-                      ? `${rooms.availableRooms} in service · ${rooms.outOfServiceRooms} out`
+                      ? `${rooms.activeHotels} listed · ${rooms.totalCities} ${
+                          rooms.totalCities === 1 ? 'city' : 'cities'
+                        }`
                       : undefined
                   }
-                  icon={BedDouble}
+                  icon={Building2}
                   tone="muted"
                 />
               </div>
@@ -199,6 +207,15 @@ export default function AdminDashboard() {
                   />
                   {rooms && (
                     <StatCard
+                      label="Rooms"
+                      value={rooms.totalRooms}
+                      hint={`${rooms.availableRooms} in service · ${rooms.outOfServiceRooms} out`}
+                      icon={BedDouble}
+                      tone="success"
+                    />
+                  )}
+                  {rooms && (
+                    <StatCard
                       label="Nightly rate range"
                       value={`${formatMoney(rooms.lowestPricePerNight)} – ${formatMoney(rooms.highestPricePerNight)}`}
                       hint={`${formatMoney(rooms.averagePricePerNight)} average`}
@@ -213,6 +230,7 @@ export default function AdminDashboard() {
         </>
       )}
 
+      {activeTab === 'hotels' && <HotelsPanel onChanged={loadStats} />}
       {activeTab === 'rooms' && <RoomsPanel roomTypes={roomTypes} onChanged={loadStats} />}
       {activeTab === 'bookings' && <BookingsPanel onChanged={loadStats} />}
       {activeTab === 'users' && <UsersPanel onChanged={loadStats} />}

@@ -7,6 +7,7 @@ import {
   Check,
   CircleSlash,
   ImageOff,
+  MapPin,
   Users,
 } from 'lucide-react'
 import { bookingsApi, normalizeError, roomsApi } from '@/lib/api'
@@ -148,7 +149,7 @@ export default function RoomDetails() {
         </Alert>
         <Link to="/" className={buttonClasses({ variant: 'outline', className: 'mt-5' })}>
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          Back to rooms
+          Back to search
         </Link>
       </div>
     )
@@ -158,13 +159,59 @@ export default function RoomDetails() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
-      <Link
-        to={{ pathname: '/', search: searchParams.toString() }}
-        className="mb-5 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-        Back to rooms
-      </Link>
+      {/* Destinations / City / Hotel / Room — the trail matters now that a room sits three
+          levels deep in the catalogue. */}
+      <nav aria-label="Breadcrumb" className="mb-5">
+        <ol className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+          <li>
+            <Link to="/" className="transition-colors hover:text-foreground">
+              Destinations
+            </Link>
+          </li>
+          {room.hotelCity && (
+            <>
+              <li aria-hidden="true">/</li>
+              <li>
+                <Link
+                  to={{
+                    pathname: '/search',
+                    search: new URLSearchParams(
+                      Object.fromEntries(
+                        Object.entries({
+                          city: room.hotelCity,
+                          checkIn: dates.checkIn,
+                          checkOut: dates.checkOut,
+                        }).filter(([, v]) => v),
+                      ),
+                    ).toString(),
+                  }}
+                  className="transition-colors hover:text-foreground"
+                >
+                  {room.hotelCity}
+                </Link>
+              </li>
+            </>
+          )}
+          {room.hotelName && (
+            <>
+              <li aria-hidden="true">/</li>
+              <li>
+                <Link
+                  to={{
+                    pathname: `/hotels/${room.hotelId}`,
+                    search: searchParams.toString(),
+                  }}
+                  className="transition-colors hover:text-foreground"
+                >
+                  {room.hotelName}
+                </Link>
+              </li>
+            </>
+          )}
+          <li aria-hidden="true">/</li>
+          <li className="font-medium text-foreground">Room {room.roomNumber}</li>
+        </ol>
+      </nav>
 
       <div className="grid grid-cols-1 gap-7 lg:grid-cols-[1.6fr_1fr]">
         {/* ── Room ─────────────────────────────────────────────────────────────── */}
@@ -197,6 +244,19 @@ export default function RoomDetails() {
             <h1 className="mt-3 text-2xl font-bold tracking-tight sm:text-3xl">
               {room.typeLabel} Room {room.roomNumber}
             </h1>
+
+            {room.hotelName && (
+              <p className="mt-1.5 inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+                <MapPin className="h-4 w-4" aria-hidden="true" />
+                <Link
+                  to={`/hotels/${room.hotelId}`}
+                  className="font-medium text-foreground transition-colors hover:text-primary hover:underline"
+                >
+                  {room.hotelName}
+                </Link>
+                {room.hotelCity && <span>· {room.hotelCity}, {room.hotelCountry}</span>}
+              </p>
+            )}
 
             <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">

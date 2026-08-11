@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { BedDouble, ImageOff, Users } from 'lucide-react'
+import { BedDouble, ImageOff, MapPin, Users } from 'lucide-react'
 import { Badge } from '@/components/ui/Feedback'
 import { buttonClasses } from '@/components/ui/Button'
 import { formatMoney, pluralize } from '@/lib/format'
@@ -88,6 +88,21 @@ export function RoomCard({ room, checkIn, checkOut, className }) {
             {room.typeLabel ?? room.type} Room
           </Link>
         </h3>
+
+        {/* Which property this belongs to. Shown whenever the card can appear outside a
+            single hotel's page — across a city search, "101" on its own means nothing. */}
+        {room.hotelName && (
+          <p className="mt-1 inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+            <MapPin className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <Link
+              to={`/hotels/${room.hotelId}`}
+              className="truncate transition-colors hover:text-foreground hover:underline"
+            >
+              {room.hotelName}
+            </Link>
+            {room.hotelCity && <span className="shrink-0">· {room.hotelCity}</span>}
+          </p>
+        )}
 
         {room.description && (
           <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">{room.description}</p>

@@ -1,8 +1,10 @@
-# 🏨 Aurora Grand — Hotel Room Booking System
+# 🏨 Staylo — Multi-City Hotel Booking Platform
 
-A production-style **hotel room booking platform** built as **3 tiers across 5 microservices**, with JWT auth, real availability logic that rejects double-bookings under concurrency, and a responsive React front end.
+A production-style **hotel booking platform** built as **3 tiers across 5 microservices**. Search a city, get the properties that genuinely have rooms free for your dates, pick a room, book it — with JWT auth, availability logic that rejects double-bookings under concurrency, and a responsive React front end.
 
-Built to be read as much as run: the interesting parts are the [availability logic](#-the-interesting-part-preventing-double-bookings) and the [architecture decisions](#-architecture-decisions-and-their-trade-offs), including the ones that are honest compromises.
+Built to be read as much as run: the interesting parts are the [availability logic](#-the-interesting-part-preventing-double-bookings), the [cross-service composition](#-how-city-search-works) that answers "which hotels in Lisbon can I actually book", and the [architecture decisions](#-architecture-decisions-and-their-trade-offs), including the ones that are honest compromises.
+
+> **On the name.** *Staylo* is the platform. *Aurora Grand* is one of the eight seeded properties (Reykjavík) — it was the platform's name back when this modelled a single hotel, and it kept the name as a property once the catalogue grew to many.
 
 <p align="left">
   <img alt="Java 21" src="https://img.shields.io/badge/Java-21-orange?logo=openjdk&logoColor=white">
@@ -20,6 +22,7 @@ Built to be read as much as run: the interesting parts are the [availability log
 
 - [What it does](#-what-it-does)
 - [Architecture](#-architecture)
+- [How city search works](#-how-city-search-works)
 - [The interesting part: preventing double-bookings](#-the-interesting-part-preventing-double-bookings)
 - [Tech stack](#-tech-stack)
 - [Screenshots](#-screenshots)
@@ -36,21 +39,26 @@ Built to be read as much as run: the interesting parts are the [availability log
 ## ✨ What it does
 
 **Guests**
-- Browse the room catalog without signing up
-- Search by **real availability** for a date range — rooms already reserved for those nights are filtered out server-side, not greyed out in the UI
-- See the stay total (`rate × nights`) before committing
-- Book a room, with the price frozen onto the reservation at booking time
+- **Search by destination** — a city autocomplete built from the properties themselves, so it can never offer a city with nothing in it
+- Get **suggested hotels that genuinely have rooms free** for the dates; sold-out properties are omitted, not shown then discovered empty
+- See the cheapest **available** rate per property — not a headline price belonging to a room someone else already took
+- Drill into a hotel, see its free rooms, and book one with the stay total (`rate × nights`) shown before committing
+- Price and property are frozen onto the reservation at booking time
 - View and cancel their own bookings; cancelling releases the nights immediately
 
 **Administrators**
-- Full room CRUD, including taking a room out of service without deleting it
-- Every booking across all guests, filterable by status, cancellable on a guest's behalf
+- Property CRUD — a hotel's city becomes a searchable destination the moment it is saved
+- Room CRUD scoped to a property, with room numbers unique *per hotel*
+- De-list a property (hiding every room in it) or take a single room out of service, without deleting either
+- Every booking across all guests and properties, filterable by status, cancellable on a guest's behalf
 - User management: promote/demote, activate/deactivate, delete
 - A dashboard with arrivals-over-time, revenue and room-mix charts
 
 **Enforced rules**
 - No overlapping confirmed bookings for the same room — verified under concurrency (see below)
 - Same-day changeover is legal: one guest checks out on the 14th, the next checks in on the 14th
+- Room numbers are unique **within a hotel**, not globally — every property has a room 101
+- A room is bookable only when *both* its own flag and its property's listing flag are set
 - `totalPrice` is always computed server-side; a client-supplied amount is ignored
 - Stays capped at 30 nights and 365 days ahead
 - A stay that has already started cannot be cancelled
@@ -82,29 +90,33 @@ Three tiers, with the application tier split into independently deployable servi
 │   • circuit breakers + a clear, retryable 503 when a service is cold          │
 └───────┬─────────────────────────┬──────────────────────────┬─────────────────┘
         │ /api/auth/**            │ /api/rooms/**            │ /api/bookings/**
-        │ /api/users/**           │                          │
+        │ /api/users/**           │ /api/hotels/**           │
         ▼                         ▼                          ▼
 ┌────────────────┐        ┌────────────────┐        ┌──────────────────────────┐
 │ auth-service   │        │ room-service   │        │ booking-service          │
 │     :9081      │        │     :9082      │        │        :9083             │
 │                │        │                │        │                          │
-│ • users        │        │ • room catalog │        │ • reservations           │
-│ • BCrypt       │        │ • ADMIN CRUD   │        │ • OVERLAP REJECTION      │
-│ • issues JWTs  │        │ • public reads │        │ • price calculation      │
-│ • admin user   │        │ • no knowledge │        │ • availability search    │
-│   management   │        │   of bookings  │        │ • Feign ──────────┐      │
+│ • users        │        │ • HOTELS       │        │ • reservations           │
+│ • BCrypt       │        │ • rooms        │        │ • OVERLAP REJECTION      │
+│ • issues JWTs  │        │ • destinations │        │ • price calculation      │
+│ • admin user   │        │ • ADMIN CRUD   │        │ • availability search    │
+│   management   │        │ • no knowledge │        │ • hotel suggestions      │
+│                │        │   of bookings  │        │ • Feign ──────────┐      │
 └───────┬────────┘        └───────┬────────┘        └────────┬──────────┼──────┘
         │                         │  ◄──────────────────────────────────┘
         │                         │                          │   one-way only:
         │                         │                          │   booking → room
+        │                         │ /api/cities              │
         ▼                         ▼                          ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │  DATA TIER            PostgreSQL 16  —  one instance, one schema per service │
 │                                                                              │
-│    auth_service.users        room_service.rooms      booking_service.bookings│
-│                                                      booking_service.room_locks│
+│  auth_service.users      room_service.hotels      booking_service.bookings   │
+│                          room_service.rooms       booking_service.room_locks │
+│                             └─ FK ─┘                                         │
+│                          (same service, so a real FK is correct)             │
 │                                                                              │
-│    No cross-schema joins. No foreign keys across a service boundary.         │
+│    No cross-schema joins. No foreign keys ACROSS a service boundary.         │
 └──────────────────────────────────────────────────────────────────────────────┘
 
         ┌──────────────────────────────────────────────────┐
@@ -121,7 +133,47 @@ Booking a room needs catalog data (the nightly rate); listing *available* rooms 
 Instead, **booking-service owns availability**. It calls room-service for the catalog and subtracts its own overlapping reservations. room-service stays a pure catalog that never calls anyone. So:
 
 - `GET /api/rooms` — the catalog, **date-blind**. Will happily list a room that's taken.
-- `GET /api/bookings/search?checkIn=…&checkOut=…` — the catalog **minus** conflicts. What the UI actually uses.
+- `GET /api/hotels?city=…` — the properties in a city, also date-blind. Its `priceFrom` may quote a room already booked.
+- `GET /api/bookings/search/hotels?city=…&checkIn=…&checkOut=…` — properties that **actually have something free**. What the UI uses.
+- `GET /api/bookings/search?hotelId=…&checkIn=…&checkOut=…` — the free rooms within one property.
+
+### Why hotels live in room-service, not a `hotel-service`
+
+A sixth service was the obvious move and would have been wrong. A room has no meaning outside its hotel — you cannot price it, describe it or book it without knowing which property it is in. They are **one aggregate**, so splitting them would put a network hop and a cold start in the middle of every "what does this room cost" question, and buy no isolation in return. room-service became the property catalog instead.
+
+The visible payoff: `hotels` → `rooms` is a **real foreign key**, because both ends are in one schema owned by one service. Compare `Booking.roomId`, which is deliberately a bare column precisely because it crosses a service boundary.
+
+---
+
+## 🔍 How city search works
+
+"Which hotels in Lisbon can I actually book next weekend" is a question **neither service can answer alone**:
+
+- room-service knows the properties and their rooms, but nothing about reservations
+- booking-service knows every reservation, but holds no catalogue
+
+So `GET /api/bookings/search/hotels` composes it. booking-service fetches both halves from room-service — the city's properties *and* its offerable rooms — subtracts its own overlapping bookings, and folds what is left up to the hotel level:
+
+```
+GET /api/bookings/search/hotels?city=Lisbon&checkIn=2027-05-10&checkOut=2027-05-13
+       │
+       ├─→ room-service  GET /api/hotels?city=Lisbon&active=true      (2 properties)
+       ├─→ room-service  GET /api/rooms?city=Lisbon&available=true    (7 rooms)
+       └─→ own database  findBookedRoomIds(2027-05-10, 2027-05-13)    (1 query, whole city)
+                │
+                ▼
+       group free rooms by hotel · cheapest AVAILABLE rate · rank by stars then price
+```
+
+Three deliberate choices in there:
+
+**Two calls, not one.** The alternative was flattening each hotel's description and facilities onto every room — repeating a paragraph of prose across all twelve rooms of a hotel, in every response.
+
+**One booked-rooms query for the whole city**, not one per hotel or per room. A 200-room destination costs one query, not 200.
+
+**The price shown is the cheapest *available* room.** This is the whole point. Book the £62 room at Alfama Tile House and the property immediately reports `2/3 rooms free · from £88` — because the £62 room is gone. A date-blind catalogue would keep advertising £62 and only reveal the truth at checkout.
+
+Sold-out properties are **omitted** rather than listed as unavailable: a suggestion list exists to be acted on, and making a guest scan eight full hotels to find one bookable is the wrong shape. Scarcity is still legible through `availableRooms` against `totalRooms`, and the card warns when only one or two remain.
 
 ---
 
@@ -169,6 +221,20 @@ EXCLUDE USING gist (
 ```
 
 This makes a double booking **unrepresentable** — proof against a future code path that forgets the lock, or a manual `INSERT`. Best-effort: H2 has no equivalent and some managed Postgres plans refuse `CREATE EXTENSION btree_gist`, so failure logs a warning rather than aborting startup. Layers 1 and 2 are portable and always active.
+
+### A bug that only appeared on PostgreSQL
+
+`GET /api/cities` worked perfectly on H2 and returned a 500 on PostgreSQL. The query filtered optionally, in the form everyone writes:
+
+```sql
+where (:query is null or lower(h.city) like lower(concat('%', :query, '%')))
+```
+
+PostgreSQL could not infer the parameter's type, because it appears in an `IS NULL` test where nothing constrains it. The driver therefore sent it untyped, and `lower('%' || ? || '%')` resolved to **`lower(bytea)`** — a function that does not exist. H2 infers the type happily, so the whole code path passed local development and failed the moment it met the real database.
+
+The fix was to stop binding a null at all: the repository now takes a ready-made LIKE pattern, and the service passes `'%'` for "no filter". One code path, no typed-null, portable across both engines.
+
+The lesson is the one worth keeping: **H2 is not a stand-in for PostgreSQL.** It is here so `mvn spring-boot:run` needs no setup, and the compose stack runs the real engine precisely so differences like this surface before deployment rather than after.
 
 ### One more resilience gap this exposed
 
@@ -459,23 +525,31 @@ Interactive docs, all three services in one dropdown: **<http://localhost:9080/s
 | `PATCH` | `/api/users/{id}/status` | **ADMIN** | Activate / deactivate |
 | `DELETE` | `/api/users/{id}` | **ADMIN** | Hard delete |
 
-### room-service
+### room-service (the property catalog)
 
 | Method | Path | Access | |
 |---|---|---|---|
-| `GET` | `/api/rooms` | public | Catalog. Filters: `type` `minPrice` `maxPrice` `guests` `q` `available`. **Date-blind.** |
+| `GET` | `/api/cities` | public | **The destination list**, derived from the hotels. `?q=` filters for autocomplete. Only cities with a listed hotel appear. Cached 5 min. |
+| `GET` | `/api/hotels` | public | Properties. Filters: `city` (exact) `country` `minStars` `q` `active`. Carries `roomCount` and `priceFrom` — both **date-blind**. |
+| `GET` | `/api/hotels/{id}` | public | One property |
+| `GET` | `/api/hotels/{id}/rooms` | public | Its rooms, cheapest first. 404 for an unknown hotel, not an empty list. |
+| `POST` | `/api/hotels` | **ADMIN** | Create. 409 if that name already exists **in that city** — chains reuse names across cities. |
+| `PUT` | `/api/hotels/{id}` | **ADMIN** | Replace |
+| `DELETE` | `/api/hotels/{id}` | **ADMIN** | Delete, **cascading to its rooms**. Prefer `active: false`. |
+| `GET` | `/api/rooms` | public | Rooms across all properties. Filters: `hotelId` `city` `type` `minPrice` `maxPrice` `guests` `q` `available`. **Date-blind.** Each result carries its hotel. |
 | `GET` | `/api/rooms/types` | public | The room-type enum, so the UI doesn't hard-code it |
 | `GET` | `/api/rooms/{id}` | public | One room |
-| `GET` | `/api/rooms/stats` | **ADMIN** | Counts by type, price spread |
-| `POST` | `/api/rooms` | **ADMIN** | Create |
-| `PUT` | `/api/rooms/{id}` | **ADMIN** | Replace. Does not alter existing bookings' prices. |
+| `GET` | `/api/rooms/stats` | **ADMIN** | Counts by type, price spread, hotel and city totals |
+| `POST` | `/api/rooms` | **ADMIN** | Create. Requires `hotelId`. 409 only if the number clashes **within that hotel**. |
+| `PUT` | `/api/rooms/{id}` | **ADMIN** | Replace, including moving it to another property. Does not alter existing bookings' prices. |
 | `DELETE` | `/api/rooms/{id}` | **ADMIN** | Delete — prefer `available: false` |
 
 ### booking-service
 
 | Method | Path | Access | |
 |---|---|---|---|
-| `GET` | `/api/bookings/search` | public | **Date-aware availability.** Catalog minus conflicts, with `nights` and `totalPrice`. Both dates or neither. |
+| `GET` | `/api/bookings/search/hotels` | public | **The destination search.** Properties in a `city` that genuinely have rooms free, ranked by stars then price. `cheapestPricePerNight` is the cheapest *available* room. Sold-out hotels omitted. |
+| `GET` | `/api/bookings/search` | public | **Date-aware room availability.** Catalog minus conflicts, with `nights` and `totalPrice`. Narrow with `hotelId` or `city`. Both dates or neither. |
 | `GET` | `/api/bookings/availability` | public | Is one room free for one range? |
 | `POST` | `/api/bookings` | authenticated | Book. Guest taken from the token, never the body. |
 | `GET` | `/api/bookings/my` | authenticated | The caller's own bookings |

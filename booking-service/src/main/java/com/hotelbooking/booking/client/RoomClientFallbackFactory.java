@@ -44,7 +44,8 @@ public class RoomClientFallbackFactory implements FallbackFactory<RoomClient> {
             }
 
             @Override
-            public List<RoomView> search(String type, BigDecimal minPrice, BigDecimal maxPrice,
+            public List<RoomView> search(Long hotelId, String city, String type,
+                                         BigDecimal minPrice, BigDecimal maxPrice,
                                          Integer guests, String q, Boolean available) {
                 log.error("room-service unavailable during availability search", cause);
                 // Returning an empty list here would render as "no rooms match your dates",

@@ -7,8 +7,9 @@ import java.math.BigDecimal;
 import java.util.List;
 
 @Schema(description = """
-        A room that is genuinely bookable for the requested dates, already priced for
-        the whole stay so the UI does not have to recompute it.
+        A room that is genuinely bookable for the requested dates, already priced for the
+        whole stay so the UI does not have to recompute it, and carrying its property so a
+        result card needs no second request.
         """)
 public record AvailableRoomResponse(
         Long id,
@@ -20,6 +21,16 @@ public record AvailableRoomResponse(
         String description,
         String imageUrl,
         List<String> amenities,
+
+        // ── Owning property ───────────────────────────────────────────────────────────
+        // A room number alone is meaningless across a multi-hotel catalogue: "101" needs
+        // to say whose 101 it is.
+        Long hotelId,
+        String hotelName,
+        String hotelCity,
+        String hotelCountry,
+        Integer hotelStarRating,
+
         @Schema(description = "Nights in the requested range, or null when no dates were given")
         Integer nights,
         @Schema(description = "pricePerNight × nights, or null when no dates were given")
@@ -36,6 +47,11 @@ public record AvailableRoomResponse(
                 room.description(),
                 room.imageUrl(),
                 room.amenities() == null ? List.of() : room.amenities(),
+                room.hotelId(),
+                room.hotelName(),
+                room.hotelCity(),
+                room.hotelCountry(),
+                room.hotelStarRating(),
                 nights,
                 totalPrice);
     }

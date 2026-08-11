@@ -28,11 +28,17 @@ public interface RoomClient {
     RoomView findById(@PathVariable("id") Long id);
 
     /**
-     * Mirrors room-service's catalog filters so the availability search can push them
-     * down instead of fetching every room and filtering locally.
+     * Mirrors room-service's catalog filters so the availability search can push them down
+     * instead of fetching every room and filtering locally.
+     *
+     * <p>{@code city} and {@code hotelId} are what make destination search cheap: narrowing
+     * to one city server-side means this service receives a few dozen rooms rather than the
+     * entire catalogue on every query.
      */
     @GetMapping
-    List<RoomView> search(@RequestParam(value = "type", required = false) String type,
+    List<RoomView> search(@RequestParam(value = "hotelId", required = false) Long hotelId,
+                          @RequestParam(value = "city", required = false) String city,
+                          @RequestParam(value = "type", required = false) String type,
                           @RequestParam(value = "minPrice", required = false) BigDecimal minPrice,
                           @RequestParam(value = "maxPrice", required = false) BigDecimal maxPrice,
                           @RequestParam(value = "guests", required = false) Integer guests,

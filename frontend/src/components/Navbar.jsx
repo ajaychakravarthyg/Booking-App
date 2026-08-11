@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { CalendarCheck, Hotel, LayoutDashboard, LogOut, Menu, User, X } from 'lucide-react'
+import { CalendarCheck, Hotel, LayoutDashboard, LogOut, Menu, Search, User, X } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { Button, buttonClasses } from '@/components/ui/Button'
 import { ThemeToggle } from './ThemeToggle'
@@ -21,7 +21,8 @@ export function Navbar() {
   }
 
   const links = [
-    { to: '/', label: 'Rooms', icon: Hotel, end: true },
+    { to: '/', label: 'Destinations', icon: Hotel, end: true },
+    { to: '/search', label: 'Search hotels', icon: Search },
     ...(isAuthenticated ? [{ to: '/my-bookings', label: 'My bookings', icon: CalendarCheck }] : []),
     ...(isAdmin ? [{ to: '/admin', label: 'Dashboard', icon: LayoutDashboard }] : []),
   ]
@@ -45,9 +46,9 @@ export function Navbar() {
             <Hotel className="h-5 w-5" aria-hidden="true" />
           </span>
           <span className="flex flex-col leading-none">
-            <span className="text-base font-bold tracking-tight">Aurora Grand</span>
+            <span className="text-base font-bold tracking-tight">Staylo</span>
             <span className="text-[0.65rem] uppercase tracking-widest text-muted-foreground">
-              Hotel &amp; Suites
+              Hotels &amp; Stays
             </span>
           </span>
         </Link>

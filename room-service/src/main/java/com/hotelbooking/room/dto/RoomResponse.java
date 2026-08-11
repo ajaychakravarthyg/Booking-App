@@ -9,7 +9,8 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 
-@Schema(description = "A room in the catalog")
+@Schema(description = "A room, including just enough of its hotel to render a result card "
+        + "without a second request")
 public record RoomResponse(
         Long id,
         String roomNumber,
@@ -22,10 +23,26 @@ public record RoomResponse(
         String imageUrl,
         List<String> amenities,
         boolean available,
+
+        // ── Owning property ───────────────────────────────────────────────────────────
+        // Flattened rather than nested so booking-service and the UI can read hotel context
+        // straight off a room. Only the fields a card or booking snapshot needs — not the
+        // whole Hotel, which would drag its own amenities and description into every row.
+        Long hotelId,
+        String hotelName,
+        String hotelCity,
+        String hotelCountry,
+        Integer hotelStarRating,
+
         Instant createdAt,
         Instant updatedAt
 ) {
+    /**
+     * @param room must have its {@code hotel} association loaded — the field is LAZY, so
+     *             callers query with a fetch join or run inside a transaction.
+     */
     public static RoomResponse from(Room room) {
+        var hotel = room.getHotel();
         return new RoomResponse(
                 room.getId(),
                 room.getRoomNumber(),
@@ -37,6 +54,11 @@ public record RoomResponse(
                 room.getImageUrl(),
                 splitAmenities(room.getAmenities()),
                 room.isAvailable(),
+                hotel == null ? null : hotel.getId(),
+                hotel == null ? null : hotel.getName(),
+                hotel == null ? null : hotel.getCity(),
+                hotel == null ? null : hotel.getCountry(),
+                hotel == null ? null : hotel.getStarRating(),
                 room.getCreatedAt(),
                 room.getUpdatedAt());
     }

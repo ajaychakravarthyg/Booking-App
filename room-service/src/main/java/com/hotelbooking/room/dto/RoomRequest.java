@@ -18,6 +18,11 @@ import java.util.List;
 @Schema(description = "Admin payload for creating or replacing a room")
 public record RoomRequest(
 
+        @NotNull(message = "Hotel is required")
+        @Schema(example = "1", description = "The owning property. A room cannot exist "
+                + "without one, and the room number only has to be unique within it.")
+        Long hotelId,
+
         @NotBlank(message = "Room number is required")
         @Size(max = 20, message = "Room number must be at most 20 characters")
         @Pattern(regexp = "^[A-Za-z0-9\\-]+$",

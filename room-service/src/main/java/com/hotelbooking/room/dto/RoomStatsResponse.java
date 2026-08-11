@@ -11,6 +11,11 @@ public record RoomStatsResponse(
         long totalRooms,
         long availableRooms,
         long outOfServiceRooms,
+        long totalHotels,
+        long activeHotels,
+        @Schema(description = "Distinct cities with at least one listed hotel — the number "
+                + "of destinations a guest can actually search")
+        long totalCities,
         BigDecimal averagePricePerNight,
         BigDecimal lowestPricePerNight,
         BigDecimal highestPricePerNight,

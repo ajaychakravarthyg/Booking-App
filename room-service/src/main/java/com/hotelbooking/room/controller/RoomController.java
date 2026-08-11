@@ -39,17 +39,28 @@ public class RoomController {
 
     private final RoomService roomService;
 
-    @Operation(summary = "Browse the room catalog",
+    @Operation(summary = "Browse rooms across all properties",
             description = """
-                    Public. Returns rooms matching the supplied filters, cheapest first.
+                    Public. Returns rooms matching the supplied filters, cheapest first. Each
+                    result carries its hotel's id, name, city and rating, so a result card
+                    needs no second request.
+
+                    Narrow with `hotelId` for one property or `city` for a whole destination.
 
                     This endpoint does **not** consider dates — a room listed here may still
                     be reserved for the nights you want. For a date-aware list call
                     `GET /api/bookings/search` on booking-service, which starts from this
                     catalog and removes rooms with overlapping reservations.
+
+                    Note `available=true` also excludes rooms belonging to a de-listed hotel:
+                    a room is only offerable when its own flag AND its property's are set.
                     """)
     @GetMapping
     public ResponseEntity<List<RoomResponse>> search(
+            @Parameter(description = "Restrict to one property")
+            @RequestParam(required = false) Long hotelId,
+            @Parameter(description = "Every room across every hotel in this city (exact match)")
+            @RequestParam(required = false) String city,
             @Parameter(description = "Exact room type") @RequestParam(required = false) RoomType type,
             @Parameter(description = "Minimum nightly rate")
             @RequestParam(required = false) @PositiveOrZero BigDecimal minPrice,
@@ -63,7 +74,8 @@ public class RoomController {
                     + "customers should pass true.")
             @RequestParam(required = false) Boolean available) {
 
-        return ResponseEntity.ok(roomService.search(type, minPrice, maxPrice, guests, q, available));
+        return ResponseEntity.ok(
+                roomService.search(hotelId, city, type, minPrice, maxPrice, guests, q, available));
     }
 
     @Operation(summary = "List the supported room types",

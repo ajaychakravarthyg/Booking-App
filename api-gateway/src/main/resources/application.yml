@@ -71,7 +71,10 @@ spring:
         - id: room-service
           uri: lb://room-service
           predicates:
-            - Path=/api/rooms/**
+            # room-service is the property catalog: rooms, the hotels that own them, and the
+            # destination list derived from those hotels. One route, one circuit breaker,
+            # because they are one service — splitting them would imply otherwise.
+            - Path=/api/rooms/**,/api/hotels/**,/api/cities/**
           filters:
             - name: CircuitBreaker
               args:

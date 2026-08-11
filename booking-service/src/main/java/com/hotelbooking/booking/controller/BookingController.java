@@ -1,6 +1,7 @@
 package com.hotelbooking.booking.controller;
 
 import com.hotelbooking.booking.domain.BookingStatus;
+import com.hotelbooking.booking.dto.AvailableHotelResponse;
 import com.hotelbooking.booking.dto.AvailableRoomResponse;
 import com.hotelbooking.booking.dto.BookingRequest;
 import com.hotelbooking.booking.dto.BookingResponse;
@@ -14,6 +15,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.PositiveOrZero;
 import lombok.RequiredArgsConstructor;
@@ -60,6 +62,13 @@ public class BookingController {
                     """)
     @GetMapping("/search")
     public ResponseEntity<List<AvailableRoomResponse>> search(
+            @Parameter(description = "Restrict to one property — the hotel detail page uses this")
+            @RequestParam(required = false) Long hotelId,
+
+            @Parameter(description = "Every hotel's rooms in this city (exact match, as "
+                    + "returned by /api/cities)")
+            @RequestParam(required = false) String city,
+
             @Parameter(description = "First night, ISO yyyy-MM-dd", example = "2026-09-14")
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkIn,
 
@@ -70,11 +79,54 @@ public class BookingController {
             @RequestParam(required = false) @PositiveOrZero BigDecimal minPrice,
             @RequestParam(required = false) @PositiveOrZero BigDecimal maxPrice,
             @RequestParam(required = false) @Min(1) Integer guests,
-            @Parameter(description = "Free-text match on room number, description or amenities")
+            @Parameter(description = "Free-text match on room, hotel name or city")
             @RequestParam(required = false) String q) {
 
+        return ResponseEntity.ok(bookingService.searchAvailable(
+                hotelId, city, checkIn, checkOut, type, minPrice, maxPrice, guests, q));
+    }
+
+    @Operation(summary = "Suggest hotels in a city that genuinely have rooms free",
+            description = """
+                    Public. **The destination search.** Give it a city and dates and it returns
+                    the properties you can actually book, best-rated first.
+
+                    Neither service can answer this alone: room-service knows the properties
+                    and their rooms but nothing about reservations, while this service knows
+                    reservations but holds no catalogue. So it reads both from room-service,
+                    subtracts its own overlapping bookings, and folds the result up per hotel.
+
+                    `cheapestPricePerNight` is the cheapest **available** room — not the
+                    property's headline rate, which may belong to a room already taken for
+                    your dates. That is the difference between this and
+                    `GET /api/hotels?city=…` on room-service, whose `priceFrom` is date-blind.
+
+                    Hotels with nothing free are omitted rather than listed as unavailable.
+                    Omit both dates to see every listed property in the city.
+                    """)
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Suggested properties"),
+            @ApiResponse(responseCode = "400", description = "City missing, or only one date given"),
+            @ApiResponse(responseCode = "503", description = "Room catalog temporarily unreachable")
+    })
+    @GetMapping("/search/hotels")
+    public ResponseEntity<List<AvailableHotelResponse>> suggestHotels(
+            @Parameter(description = "Destination, exactly as returned by /api/cities",
+                    example = "Lisbon", required = true)
+            @RequestParam String city,
+
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkIn,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkOut,
+
+            @Parameter(description = "Only count rooms sleeping at least this many")
+            @RequestParam(required = false) @Min(1) Integer guests,
+            @Parameter(description = "Only count rooms at or below this nightly rate")
+            @RequestParam(required = false) @PositiveOrZero BigDecimal maxPrice,
+            @Parameter(description = "Minimum property star rating, 1-5")
+            @RequestParam(required = false) @Min(1) @Max(5) Integer minStars) {
+
         return ResponseEntity.ok(
-                bookingService.searchAvailable(checkIn, checkOut, type, minPrice, maxPrice, guests, q));
+                bookingService.suggestHotels(city, checkIn, checkOut, guests, maxPrice, minStars));
     }
 
     @Operation(summary = "Check one room against one date range",

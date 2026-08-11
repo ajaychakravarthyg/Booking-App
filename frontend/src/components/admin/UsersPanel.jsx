@@ -7,6 +7,8 @@ import { Card } from '@/components/ui/Card'
 import { Select } from '@/components/ui/Field'
 import { Modal } from '@/components/ui/Modal'
 import { Alert, Badge, EmptyState, PageLoader } from '@/components/ui/Feedback'
+import { PanelHero } from '@/components/PageHero'
+import { HERO } from '@/lib/images'
 import { formatDateTime } from '@/lib/format'
 
 export function UsersPanel({ onChanged }) {
@@ -90,13 +92,11 @@ export function UsersPanel({ onChanged }) {
 
   return (
     <div>
-      <div className="mb-5">
-        <h2 className="text-lg font-semibold">Users</h2>
-        <p className="text-sm text-muted-foreground">
-          {users.length} {users.length === 1 ? 'account' : 'accounts'}. Deactivating is preferred
-          over deleting — it blocks sign-in while keeping the booking history attributable.
-        </p>
-      </div>
+      <PanelHero
+        image={HERO.guests}
+        title="Users"
+        description={`${users.length} ${users.length === 1 ? 'account' : 'accounts'} · deactivating is preferred over deleting, as it blocks sign-in while keeping booking history attributable`}
+      />
 
       {notice && (
         <Alert variant="success" className="mb-4">

@@ -16,7 +16,7 @@ import java.util.List;
 @Configuration
 public class OpenApiConfig {
 
-    @Value("${app.public-url:http://localhost:8080}")
+    @Value("${app.public-url:http://localhost:9080}")
     private String publicUrl;
 
     @Bean
@@ -40,7 +40,7 @@ public class OpenApiConfig {
                         .license(new License().name("MIT")))
                 .servers(List.of(
                         new Server().url(publicUrl).description("Via API gateway"),
-                        new Server().url("http://localhost:8082").description("Direct (local dev)")))
+                        new Server().url("http://localhost:9082").description("Direct (local dev)")))
                 .components(new Components().addSecuritySchemes("bearerAuth",
                         new SecurityScheme()
                                 .type(SecurityScheme.Type.HTTP)

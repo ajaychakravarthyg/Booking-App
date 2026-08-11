@@ -5,6 +5,8 @@ import { bookingsApi, normalizeError, roomsApi } from '@/lib/api'
 import { RoomCard } from '@/components/RoomCard'
 import { SearchBar } from '@/components/SearchBar'
 import { Alert, EmptyState, RoomCardSkeleton } from '@/components/ui/Feedback'
+import { PageHero } from '@/components/PageHero'
+import { HERO } from '@/lib/images'
 import { pluralize } from '@/lib/format'
 
 /** Drops empty strings so they don't become `?type=` in the URL or the request. */
@@ -72,13 +74,13 @@ export default function Rooms() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Find your room</h1>
-        <p className="mt-1.5 max-w-2xl text-sm text-muted-foreground sm:text-base">
-          Pick your dates to see only what is genuinely available — rooms already reserved for
-          those nights are filtered out before you ever see them.
-        </p>
-      </header>
+      <PageHero
+        image={HERO.rooms}
+        eyebrow="Aurora Grand Hotel & Suites"
+        title="Find your room"
+        description="Pick your dates to see only what is genuinely available — rooms already reserved for those nights are filtered out before you ever see them."
+        className="mb-6"
+      />
 
       <SearchBar
         initial={filters}

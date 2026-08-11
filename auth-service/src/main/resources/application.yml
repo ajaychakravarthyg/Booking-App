@@ -1,5 +1,5 @@
 server:
-  port: ${SERVER_PORT:8081}
+  port: ${SERVER_PORT:9081}
   shutdown: graceful
 
 spring:
@@ -30,7 +30,7 @@ app:
     secret: ${JWT_SECRET:dev-only-insecure-jwt-secret-change-me-before-deploying-0123456789}
     expiration-seconds: ${JWT_EXPIRATION_SECONDS:86400}
     issuer: hotel-booking
-  public-url: ${PUBLIC_API_URL:http://localhost:8080}
+  public-url: ${PUBLIC_API_URL:http://localhost:9080}
   seed:
     enabled: ${SEED_ENABLED:true}
     admin:
@@ -42,7 +42,11 @@ eureka:
   client:
     enabled: ${EUREKA_ENABLED:true}
     service-url:
-      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+      defaultZone: ${EUREKA_URL:http://localhost:9761/eureka/}
+    # Default is 30s. That leaves a window after a service becomes healthy where this
+    # client still believes no instance exists — which on a fresh `docker compose up`
+    # surfaced as transient 503s from the gateway even though every container was healthy.
+    registry-fetch-interval-seconds: ${EUREKA_FETCH_INTERVAL:5}
   instance:
     prefer-ip-address: true
     # Faster registry convergence than the 30s/90s defaults, which matters when

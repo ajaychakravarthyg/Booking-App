@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BedDouble, Pencil, Plus, Trash2 } from 'lucide-react'
+import { BedDouble, Image as ImageIcon, Pencil, Plus, Trash2 } from 'lucide-react'
 import { normalizeError, roomsApi } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Field, Input, Select, Textarea } from '@/components/ui/Field'
 import { Modal } from '@/components/ui/Modal'
 import { Alert, Badge, EmptyState, PageLoader } from '@/components/ui/Feedback'
+import { PanelHero } from '@/components/PageHero'
+import { RoomThumb } from '@/components/RoomThumb'
+import { HERO } from '@/lib/images'
 import { formatMoney } from '@/lib/format'
 
 const BLANK = {
@@ -45,6 +48,8 @@ export function RoomsPanel({ roomTypes, onChanged }) {
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState(null)
 
+  const [previewFailed, setPreviewFailed] = useState(false)
+
   const [toDelete, setToDelete] = useState(null)
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState(null)
@@ -71,17 +76,21 @@ export function RoomsPanel({ roomTypes, onChanged }) {
     setEditing('new')
     setForm(BLANK)
     setSaveError(null)
+    setPreviewFailed(false)
   }
 
   const openEdit = (room) => {
     setEditing(room)
     setForm(toFormState(room))
     setSaveError(null)
+    setPreviewFailed(false)
   }
 
   const update = (key) => (event) => {
     const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value
     setForm((current) => ({ ...current, [key]: value }))
+    // A new URL deserves a fresh attempt; otherwise one bad paste latches the error on.
+    if (key === 'imageUrl') setPreviewFailed(false)
   }
 
   const handleSave = async (event) => {
@@ -142,18 +151,19 @@ export function RoomsPanel({ roomTypes, onChanged }) {
 
   return (
     <div>
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">Room inventory</h2>
-          <p className="text-sm text-muted-foreground">
-            {rooms.length} {rooms.length === 1 ? 'room' : 'rooms'} in the catalog
-          </p>
-        </div>
-        <Button onClick={openNew}>
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          Add room
-        </Button>
-      </div>
+      <PanelHero
+        image={HERO.inventory}
+        title="Room inventory"
+        description={`${rooms.length} ${rooms.length === 1 ? 'room' : 'rooms'} in the catalog · ${
+          rooms.filter((r) => r.available).length
+        } in service`}
+        action={
+          <Button onClick={openNew}>
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Add room
+          </Button>
+        }
+      />
 
       {notice && (
         <Alert variant="success" className="mb-4">
@@ -186,6 +196,9 @@ export function RoomsPanel({ roomTypes, onChanged }) {
             <table className="w-full min-w-[46rem] text-sm">
               <thead className="border-b border-border bg-muted/40 text-left">
                 <tr>
+                  <th scope="col" className="px-4 py-3 font-semibold">
+                    <span className="sr-only">Photo</span>
+                  </th>
                   <th scope="col" className="px-4 py-3 font-semibold">Room</th>
                   <th scope="col" className="px-4 py-3 font-semibold">Type</th>
                   <th scope="col" className="px-4 py-3 font-semibold">Rate</th>
@@ -197,6 +210,9 @@ export function RoomsPanel({ roomTypes, onChanged }) {
               <tbody className="divide-y divide-border">
                 {rooms.map((room) => (
                   <tr key={room.id} className="transition-colors hover:bg-muted/30">
+                    <td className="py-2 pl-4 pr-0">
+                      <RoomThumb imageUrl={room.imageUrl} roomNumber={room.roomNumber} size={44} />
+                    </td>
                     <td className="px-4 py-3 font-medium">{room.roomNumber}</td>
                     <td className="px-4 py-3 text-muted-foreground">{room.typeLabel}</td>
                     <td className="px-4 py-3">{formatMoney(room.pricePerNight)}</td>
@@ -337,6 +353,36 @@ export function RoomsPanel({ roomTypes, onChanged }) {
               />
             )}
           </Field>
+
+          {/* Live preview. Room images are arbitrary external URLs, so showing the result
+              before saving is the only way an admin finds out the link is wrong without
+              publishing a broken card to every guest. */}
+          <div className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-3">
+            <div className="relative aspect-[4/3] w-32 shrink-0 overflow-hidden rounded-md bg-muted">
+              {form.imageUrl.trim() && !previewFailed ? (
+                <img
+                  src={form.imageUrl.trim()}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  onError={() => setPreviewFailed(true)}
+                />
+              ) : (
+                <div className="grid h-full w-full place-items-center">
+                  <ImageIcon className="h-6 w-6 text-muted-foreground/60" aria-hidden="true" />
+                </div>
+              )}
+            </div>
+            <div className="min-w-0 text-sm">
+              <p className="font-medium">Preview</p>
+              <p className="mt-0.5 text-muted-foreground">
+                {!form.imageUrl.trim()
+                  ? 'No image set — guests will see a placeholder tile.'
+                  : previewFailed
+                    ? 'That URL could not be loaded. Check it before saving.'
+                    : 'This is how the photo will be cropped on the room card.'}
+              </p>
+            </div>
+          </div>
 
           <Field label="Amenities" hint="Comma separated." error={saveError?.fieldErrors?.amenities}>
             {(props) => (

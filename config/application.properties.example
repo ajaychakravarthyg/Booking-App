@@ -17,8 +17,8 @@
 
 # ══ COMMON TO ALL SERVICES ═══════════════════════════════════════════════════════
 
-# Change per service: 8081 auth · 8082 room · 8083 booking · 8080 gateway · 8761 eureka
-server.port=${SERVER_PORT:8081}
+# Change per service: 9081 auth · 9082 room · 9083 booking · 9080 gateway · 9761 eureka
+server.port=${SERVER_PORT:9081}
 server.shutdown=graceful
 spring.lifecycle.timeout-per-shutdown-phase=20s
 
@@ -93,7 +93,7 @@ spring.datasource.hikari.connection-timeout=30000
 # ══ SERVICE DISCOVERY (all except discovery-server itself) ═══════════════════════
 
 eureka.client.enabled=${EUREKA_ENABLED:true}
-eureka.client.service-url.defaultZone=${EUREKA_URL:http://localhost:8761/eureka/}
+eureka.client.service-url.defaultZone=${EUREKA_URL:http://localhost:9761/eureka/}
 eureka.instance.prefer-ip-address=true
 
 # Faster convergence than the 30s/90s defaults, which matters when containers restart.
@@ -125,7 +125,7 @@ eureka.instance.lease-expiration-duration-in-seconds=30
 
 # Static fallback address so lb:// resolves with EUREKA_ENABLED=false. Spring consults
 # Eureka first, so this is never reached when the registry is up.
-# spring.cloud.discovery.client.simple.instances.room-service[0].uri=${ROOM_SERVICE_URL:http://localhost:8082}
+# spring.cloud.discovery.client.simple.instances.room-service[0].uri=${ROOM_SERVICE_URL:http://localhost:9082}
 
 
 # ══ GATEWAY ONLY ═════════════════════════════════════════════════════════════════
@@ -133,7 +133,7 @@ eureka.instance.lease-expiration-duration-in-seconds=30
 # The one and only CORS config in the platform — the services all disable theirs, since
 # two sources would emit duplicate headers and browsers reject that.
 # Patterns, not exact origins, so Vercel preview URLs work: https://*.vercel.app
-# spring.cloud.gateway.globalcors.cors-configurations.[/**].allowedOriginPatterns=${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+# spring.cloud.gateway.globalcors.cors-configurations.[/**].allowedOriginPatterns=${CORS_ALLOWED_ORIGINS:http://localhost:5174}
 # spring.cloud.gateway.globalcors.cors-configurations.[/**].allowedMethods=GET,POST,PUT,PATCH,DELETE,OPTIONS
 # spring.cloud.gateway.globalcors.cors-configurations.[/**].allowedHeaders=*
 # The JWT travels in a header, not a cookie, so credentialed requests are unnecessary —
@@ -158,7 +158,7 @@ app.seed.admin.password=${ADMIN_PASSWORD:Admin@12345}
 
 # ══ DOCS AND OBSERVABILITY ═══════════════════════════════════════════════════════
 
-app.public-url=${PUBLIC_API_URL:http://localhost:8080}
+app.public-url=${PUBLIC_API_URL:http://localhost:9080}
 
 springdoc.api-docs.path=/v3/api-docs
 springdoc.swagger-ui.path=/swagger-ui.html

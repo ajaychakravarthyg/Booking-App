@@ -73,7 +73,7 @@ Three tiers, with the application tier split into independently deployable servi
                                 │  HTTPS / JSON  ·  Authorization: Bearer <JWT>
                                 ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│  API GATEWAY  :8080          Spring Cloud Gateway (WebFlux)                  │
+│  API GATEWAY  :9080          Spring Cloud Gateway (WebFlux)                  │
 │                                                                              │
 │   • routes by path prefix onto logical service ids (lb://…)                   │
 │   • verifies the JWT once, at the edge                                        │
@@ -86,7 +86,7 @@ Three tiers, with the application tier split into independently deployable servi
         ▼                         ▼                          ▼
 ┌────────────────┐        ┌────────────────┐        ┌──────────────────────────┐
 │ auth-service   │        │ room-service   │        │ booking-service          │
-│     :8081      │        │     :8082      │        │        :8083             │
+│     :9081      │        │     :9082      │        │        :9083             │
 │                │        │                │        │                          │
 │ • users        │        │ • room catalog │        │ • reservations           │
 │ • BCrypt       │        │ • ADMIN CRUD   │        │ • OVERLAP REJECTION      │
@@ -108,7 +108,7 @@ Three tiers, with the application tier split into independently deployable servi
 └──────────────────────────────────────────────────────────────────────────────┘
 
         ┌──────────────────────────────────────────────────┐
-        │  discovery-server :8761   Netflix Eureka         │
+        │  discovery-server :9761   Netflix Eureka         │
         │  every service registers; gateway and Feign      │
         │  resolve each other by name, never by host:port  │
         └──────────────────────────────────────────────────┘
@@ -170,6 +170,27 @@ EXCLUDE USING gist (
 
 This makes a double booking **unrepresentable** — proof against a future code path that forgets the lock, or a manual `INSERT`. Best-effort: H2 has no equivalent and some managed Postgres plans refuse `CREATE EXTENSION btree_gist`, so failure logs a warning rather than aborting startup. Layers 1 and 2 are portable and always active.
 
+### One more resilience gap this exposed
+
+Running the suite against a freshly-restarted stack produced sporadic `503`s on
+`/api/bookings/**` while every container reported healthy. The cause was a **stale service
+registration**: restarting a container leaves its dead entry in Eureka for up to ~45s, so
+round-robin picked a dead instance roughly half the time.
+
+Two fixes, both in the repo:
+
+- **A `Retry` filter on each gateway route**, scoped to *connection-level* failures only
+  (`ConnectException` / `IOException`). Because a connection error means the request never
+  reached the service, replaying it is safe even for `POST` — it cannot double-create a
+  booking. The retry re-runs load balancing, so it lands on a live instance. Retrying on a
+  5xx *response* would not be safe, hence the explicitly empty `series`/`statuses`.
+- **`registry-fetch-interval-seconds: 5`** (down from the 30s default), so a newly healthy
+  instance becomes visible to the gateway quickly.
+
+The smoke test also now waits for the gateway to be able to *route*, not merely for its own
+`/actuator/health` to answer — health proves the gateway is up, it does not prove the
+registry has converged.
+
 ### Verified
 
 87 concurrent attempts across 5 previously-unbooked rooms, plus overlapping-but-different ranges:
@@ -184,7 +205,22 @@ This makes a double booking **unrepresentable** — proof against a future code 
 
 Zero overlapping pairs, zero unhandled exceptions.
 
-> One more bug surfaced during that fix, worth recording. Swallowing the duplicate-key exception *inside* the registrar's own transaction produced `UnexpectedRollbackException` — once a statement fails, the transaction is already marked rollback-only, so catching the exception just moves the failure to commit time. The insert had to move into its own bean (`RoomLockInserter`) so the `catch` sits **outside** the transaction boundary. That is why those two classes are separate.
+Reproduce it yourself against a running stack:
+
+```bash
+make race          # or: ./scripts/race-test.sh http://localhost:9080 20
+make smoke         # 43 assertions across the whole API
+```
+
+`race-test.sh` picks a random date window each run and cancels what it created on the way
+out, so it is safe to run repeatedly — an earlier version reused fixed dates and reported a
+false failure on its second run, when the service was in fact correctly returning `409`.
+
+> Two more bugs surfaced while fixing this, both worth recording.
+>
+> **Swallowing an exception inside its own transaction.** Catching the duplicate-key error *within* the registrar's transaction produced `UnexpectedRollbackException` — once a statement fails, the transaction is already marked rollback-only, so catching the exception merely moves the failure to commit time. The insert had to move into its own bean (`RoomLockInserter`) so the `catch` sits **outside** the transaction boundary. That is why those two classes are separate.
+>
+> **The exception was not the type I expected.** The `catch` was originally on Spring's `DataAccessException`, but the error arrived as a raw Hibernate `ConstraintViolationException` — `EntityManager.flush()` is not covered by Spring's persistence-exception translation, which only wraps `@Repository` beans. Rather than widen the catch and hope, `RoomLockRegistrar` now confirms the benign case *by its effect* (is the row present?) and rethrows anything else.
 
 ### Boundary behaviour
 
@@ -220,7 +256,22 @@ The theme and components are sourced from the **[21st.dev](https://21st.dev)** r
 - **Room card** — adapted from ["Hotel Card UI Component" by @uniquesonu](https://21st.dev/@uniquesonu/components/hotel-card-ui-component). Kept the hover lift, image scale and uppercase eyebrow; relaid out vertically for a grid, and the rating block replaced with price and capacity.
 - **Button / Card primitives** — the shadcn/ui versions from that component's registry dependencies, converted TSX → JSX with the variant map inlined so the project needs neither `class-variance-authority` nor `@radix-ui/react-slot`.
 
-Room photography is from Unsplash via hotlinked URLs, seeded by `RoomSeeder`.
+**Imagery.** Room photography is Unsplash, hotlinked and seeded by `RoomSeeder` — each room
+carries its own `imageUrl`, so the catalog stays editable by an admin rather than hard-coded
+in the frontend. Page furniture (hero banners) lives in `src/lib/images.js`. The admin area
+is image-led rather than a bare CRUD table:
+
+- banner heroes on the dashboard and on each management panel, with a gradient scrim so the
+  overlaid text stays legible whatever the photograph
+- room thumbnails in the inventory table and beside every reservation
+- a **live preview** in the room form — image URLs are arbitrary external links, so showing
+  the crop before saving is the only way an admin catches a broken link without publishing
+  it to every guest
+- `RoomThumb` degrades to an icon tile on load failure, rather than a broken-image glyph
+
+Booking rows get their thumbnail by joining `roomId → imageUrl` from the catalog in the
+client. A booking deliberately snapshots only the room's number, type and rate — a photo is
+presentation, not contract, so it is not frozen onto the reservation.
 
 ---
 
@@ -232,7 +283,8 @@ Room photography is from Unsplash via hotlinked URLs, seeded by `RoomSeeder`.
 |---|---|
 | **Room search** — date-aware availability<br><img src="docs/screenshots/rooms-light.png" width="420" alt="Room listing, light theme"> | **Dark theme**<br><img src="docs/screenshots/rooms-dark.png" width="420" alt="Room listing, dark theme"> |
 | **Room detail + booking**<br><img src="docs/screenshots/room-details.png" width="420" alt="Room detail with booking panel"> | **My bookings**<br><img src="docs/screenshots/my-bookings.png" width="420" alt="My bookings with cancel"> |
-| **Admin dashboard**<br><img src="docs/screenshots/admin-dashboard.png" width="420" alt="Admin dashboard with charts"> | **Room management**<br><img src="docs/screenshots/admin-rooms.png" width="420" alt="Admin room management"> |
+| **Admin dashboard** — banner, KPI tiles, charts<br><img src="docs/screenshots/admin-dashboard.png" width="420" alt="Admin dashboard with charts"> | **Room management** — thumbnails + live image preview<br><img src="docs/screenshots/admin-rooms.png" width="420" alt="Admin room management"> |
+| **All bookings** — room thumbnails per reservation<br><img src="docs/screenshots/admin-bookings.png" width="420" alt="Admin bookings table"> | **User management**<br><img src="docs/screenshots/admin-users.png" width="420" alt="Admin user management"> |
 | **Aggregated Swagger UI**<br><img src="docs/screenshots/swagger.png" width="420" alt="Swagger UI"> | **Eureka registry**<br><img src="docs/screenshots/eureka.png" width="420" alt="Eureka dashboard"> |
 
 ---
@@ -247,6 +299,24 @@ Room photography is from Unsplash via hotlinked URLs, seeded by `RoomSeeder`.
 | JDK | 21+ | running services without Docker |
 | Maven | 3.9+ | ditto |
 | Node.js | 20+ | the frontend |
+
+### Ports
+
+Deliberately **not** the usual 8080/8081/5173. Those collide with almost every other
+Spring Boot or Vite project on a developer machine, and this stack binds six ports at
+once. Everything sits in a 9xxx block instead, and Postgres is on 5433 so it does not
+fight a local 5432 install. Every one is overridable in `.env`.
+
+| Service | Port | |
+|---|---|---|
+| frontend | **3000** | the app (nginx, via Docker) |
+| frontend dev | **5174** | `npm run dev` |
+| api-gateway | **9080** | the only port the browser needs |
+| auth-service | 9081 | direct access / Swagger |
+| room-service | 9082 | direct access / Swagger |
+| booking-service | 9083 | direct access / Swagger |
+| discovery-server | 9761 | Eureka dashboard |
+| postgres | 5433 | host mapping; stays 5432 inside the network |
 
 ---
 
@@ -268,8 +338,8 @@ Then open:
 | URL | |
 |---|---|
 | <http://localhost:3000> | **the app** |
-| <http://localhost:8080/swagger-ui.html> | all three APIs in one Swagger UI |
-| <http://localhost:8761> | Eureka registry |
+| <http://localhost:9080/swagger-ui.html> | all three APIs in one Swagger UI |
+| <http://localhost:9761> | Eureka registry |
 
 Sign in with the seeded admin: **`admin@hotel.com`** / **`Admin@12345`**
 
@@ -294,23 +364,23 @@ Six terminals. **Zero setup**: each service defaults to its own in-memory H2 dat
 # 1 — service registry (start first)
 cd discovery-server && mvn spring-boot:run
 
-# 2 — auth-service        :8081
+# 2 — auth-service        :9081
 cd auth-service && mvn spring-boot:run
 
-# 3 — room-service        :8082
+# 3 — room-service        :9082
 cd room-service && mvn spring-boot:run
 
-# 4 — booking-service     :8083
+# 4 — booking-service     :9083
 cd booking-service && mvn spring-boot:run
 
-# 5 — api-gateway         :8080
+# 5 — api-gateway         :9080
 cd api-gateway && mvn spring-boot:run
 
-# 6 — frontend            :5173
+# 6 — frontend            :5174
 cd frontend && npm install && npm run dev
 ```
 
-Open <http://localhost:5173>. The Vite dev server proxies `/api` to the gateway, so the browser stays same-origin and CORS never applies.
+Open <http://localhost:5174>. The Vite dev server proxies `/api` to the gateway, so the browser stays same-origin and CORS never applies.
 
 **Skipping Eureka.** Each service also runs standalone:
 
@@ -337,44 +407,44 @@ SPRING_PROFILES_ACTIVE=postgres DB_SCHEMA=auth_service mvn spring-boot:run   # p
 
 ```bash
 # 1 — register a guest
-TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/register \
+TOKEN=$(curl -s -X POST http://localhost:9080/api/auth/register \
   -H 'Content-Type: application/json' \
   -d '{"name":"Ada Lovelace","email":"ada@example.com","password":"Str0ngPassw0rd"}' \
   | grep -oP '"token":"\K[^"]+')
 
 # 2 — search rooms actually free for those dates (note nights + totalPrice)
-curl -s "http://localhost:8080/api/bookings/search?checkIn=2026-09-14&checkOut=2026-09-17"
+curl -s "http://localhost:9080/api/bookings/search?checkIn=2026-09-14&checkOut=2026-09-17"
 
 # 3 — book one
-curl -s -X POST http://localhost:8080/api/bookings \
+curl -s -X POST http://localhost:9080/api/bookings \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"roomId":9,"checkInDate":"2026-09-14","checkOutDate":"2026-09-17"}'
 
 # 4 — the same nights again → 409, not a second booking
-curl -s -X POST http://localhost:8080/api/bookings \
+curl -s -X POST http://localhost:9080/api/bookings \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"roomId":9,"checkInDate":"2026-09-15","checkOutDate":"2026-09-16"}'
 
 # 5 — but the changeover day is fine → 201
-curl -s -X POST http://localhost:8080/api/bookings \
+curl -s -X POST http://localhost:9080/api/bookings \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"roomId":9,"checkInDate":"2026-09-17","checkOutDate":"2026-09-19"}'
 
 # 6 — your bookings
-curl -s http://localhost:8080/api/bookings/my -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:9080/api/bookings/my -H "Authorization: Bearer $TOKEN"
 ```
 
 Prove the header-spoofing defence — this returns **401**, not admin data:
 
 ```bash
-curl -s http://localhost:8080/api/users -H 'X-User-Role: ADMIN' -H 'X-User-Id: 1'
+curl -s http://localhost:9080/api/users -H 'X-User-Role: ADMIN' -H 'X-User-Id: 1'
 ```
 
 ---
 
 ## 📚 API reference
 
-Interactive docs, all three services in one dropdown: **<http://localhost:8080/swagger-ui.html>**
+Interactive docs, all three services in one dropdown: **<http://localhost:9080/swagger-ui.html>**
 
 ### auth-service
 
@@ -673,23 +743,23 @@ Put Caddy in front for automatic TLS, and keep the frontend on Vercel pointing a
 
 ```
 Booking-App/
-├── discovery-server/          Eureka registry              :8761
-├── api-gateway/               Spring Cloud Gateway         :8080
+├── discovery-server/          Eureka registry              :9761
+├── api-gateway/               Spring Cloud Gateway         :9080
 │   └── src/main/java/com/hotelbooking/gateway/
 │       ├── filter/AuthenticationGatewayFilter.java   JWT verify + header stripping
 │       ├── controller/FallbackController.java        clear 503 on cold start
 │       └── security/JwtService.java
-├── auth-service/              Identity                     :8081
+├── auth-service/              Identity                     :9081
 │   └── src/main/java/com/hotelbooking/auth/
 │       ├── controller/  service/  repository/  domain/  dto/
 │       ├── security/    JwtService (issuer) · JwtAuthenticationFilter
 │       ├── config/      SecurityConfig · AdminSeeder · OpenApiConfig
 │       └── exception/   GlobalExceptionHandler · ApiErrorResponse
-├── room-service/              Room catalog                 :8082
+├── room-service/              Room catalog                 :9082
 │   └── src/main/java/com/hotelbooking/room/
 │       ├── repository/RoomSpecifications.java       composable dynamic filters
 │       └── config/RoomSeeder.java                   10 sample rooms
-├── booking-service/           Reservations                 :8083
+├── booking-service/           Reservations                 :9083
 │   └── src/main/java/com/hotelbooking/booking/
 │       ├── domain/RoomLock.java                     ← the phantom-insert fix
 │       ├── service/ReservationWriter.java           the short critical section
@@ -698,7 +768,7 @@ Booking-App/
 │       ├── client/RoomClientFallbackFactory.java    404 vs outage, told apart
 │       ├── repository/BookingRepository.java        the overlap query
 │       └── config/BookingConstraintInstaller.java   Postgres exclusion constraint
-├── frontend/                  React SPA                    :5173 dev / :3000 docker
+├── frontend/                  React SPA                    :5174 dev / :3000 docker
 │   ├── src/
 │   │   ├── lib/api.js                  axios + JWT + cold-start retry
 │   │   ├── context/AuthContext.jsx

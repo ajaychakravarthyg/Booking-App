@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CalendarRange, CalendarX } from 'lucide-react'
-import { bookingsApi, normalizeError } from '@/lib/api'
+import { bookingsApi, normalizeError, roomsApi } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Select } from '@/components/ui/Field'
 import { Modal } from '@/components/ui/Modal'
 import { Alert, Badge, EmptyState, PageLoader } from '@/components/ui/Feedback'
+import { PanelHero } from '@/components/PageHero'
+import { RoomThumb } from '@/components/RoomThumb'
+import { HERO } from '@/lib/images'
 import { formatDate, formatDateTime, formatMoney } from '@/lib/format'
 
 export function BookingsPanel({ onChanged }) {
@@ -18,6 +21,26 @@ export function BookingsPanel({ onChanged }) {
   const [toCancel, setToCancel] = useState(null)
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState(null)
+
+  /*
+   * roomId -> imageUrl, fetched from room-service once.
+   *
+   * A booking deliberately snapshots only the room's number, type and rate — not its
+   * photo, which is presentation rather than contract and would go stale. So the thumbnail
+   * is joined in the client, which is the same composition pattern the dashboard uses.
+   * A missing entry simply renders the placeholder tile.
+   */
+  const [roomImages, setRoomImages] = useState({})
+
+  useEffect(() => {
+    roomsApi
+      .list()
+      .then(({ data }) => {
+        setRoomImages(Object.fromEntries(data.map((room) => [room.id, room.imageUrl])))
+      })
+      // Thumbnails are decorative; failing to load them must not break the table.
+      .catch(() => setRoomImages({}))
+  }, [])
 
   const load = useCallback(async (activeStatus) => {
     setLoading(true)
@@ -64,24 +87,26 @@ export function BookingsPanel({ onChanged }) {
 
   return (
     <div>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">All bookings</h2>
-          <p className="text-sm text-muted-foreground">
-            {totals.count} {totals.count === 1 ? 'reservation' : 'reservations'} ·{' '}
-            {formatMoney(totals.revenue)} confirmed value
-          </p>
-        </div>
-
-        <label className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">Status</span>
-          <Select value={status} onChange={(event) => setStatus(event.target.value)} className="w-40">
-            <option value="">All</option>
-            <option value="CONFIRMED">Confirmed</option>
-            <option value="CANCELLED">Cancelled</option>
-          </Select>
-        </label>
-      </div>
+      <PanelHero
+        image={HERO.reservations}
+        title="All bookings"
+        description={`${totals.count} ${totals.count === 1 ? 'reservation' : 'reservations'} · ${formatMoney(totals.revenue)} confirmed value`}
+        action={
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-white/80">Status</span>
+            <Select
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
+              className="w-40"
+              aria-label="Filter by booking status"
+            >
+              <option value="">All</option>
+              <option value="CONFIRMED">Confirmed</option>
+              <option value="CANCELLED">Cancelled</option>
+            </Select>
+          </label>
+        }
+      />
 
       {notice && (
         <Alert variant="success" className="mb-4">
@@ -127,8 +152,17 @@ export function BookingsPanel({ onChanged }) {
                       <div className="text-xs text-muted-foreground">{booking.userEmail}</div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="font-medium">{booking.roomNumber}</div>
-                      <div className="text-xs text-muted-foreground">{booking.roomType}</div>
+                      <div className="flex items-center gap-2.5">
+                        <RoomThumb
+                          imageUrl={roomImages[booking.roomId]}
+                          roomNumber={booking.roomNumber}
+                          size={36}
+                        />
+                        <div>
+                          <div className="font-medium">{booking.roomNumber}</div>
+                          <div className="text-xs text-muted-foreground">{booking.roomType}</div>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
                       {formatDate(booking.checkInDate)} → {formatDate(booking.checkOutDate)}

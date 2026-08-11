@@ -15,6 +15,8 @@ import { RoomsPanel } from '@/components/admin/RoomsPanel'
 import { BookingsPanel } from '@/components/admin/BookingsPanel'
 import { UsersPanel } from '@/components/admin/UsersPanel'
 import { Alert, PageLoader } from '@/components/ui/Feedback'
+import { PageHero } from '@/components/PageHero'
+import { HERO } from '@/lib/images'
 import { formatMoney } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -85,13 +87,14 @@ export default function AdminDashboard() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Admin dashboard</h1>
-        <p className="mt-1.5 text-sm text-muted-foreground">
-          Figures below are composed in the browser from three separate services — auth, rooms
-          and bookings — each queried independently.
-        </p>
-      </header>
+      <PageHero
+        image={HERO.admin}
+        eyebrow="Aurora Grand · Operations"
+        title="Admin dashboard"
+        description="Figures below are composed in the browser from three separate services — auth, rooms and bookings — each queried independently."
+        height="h-40 sm:h-44"
+        className="mb-6"
+      />
 
       <div className="mb-6 flex gap-1 overflow-x-auto border-b border-border" role="tablist">
         {TABS.map(({ id, label, icon: Icon }) => (

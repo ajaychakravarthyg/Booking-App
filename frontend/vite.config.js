@@ -11,13 +11,13 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 5174,
     // Proxy /api to the gateway in development. This keeps the browser on a single
     // origin so CORS never enters the picture locally, and it means the dev build
     // uses the same relative URLs as production.
     proxy: {
       '/api': {
-        target: process.env.VITE_DEV_PROXY_TARGET || 'http://localhost:8080',
+        target: process.env.VITE_DEV_PROXY_TARGET || 'http://localhost:9080',
         changeOrigin: true,
       },
     },

@@ -1,5 +1,5 @@
 server:
-  port: ${SERVER_PORT:8080}
+  port: ${SERVER_PORT:9080}
   shutdown: graceful
 
 spring:
@@ -24,7 +24,7 @@ spring:
           '[/**]':
             # Patterns rather than exact origins so Vercel preview deployments
             # (https://<branch>-<project>.vercel.app) work without a redeploy per branch.
-            allowedOriginPatterns: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:4173,http://localhost:3000}
+            allowedOriginPatterns: ${CORS_ALLOWED_ORIGINS:http://localhost:5174,http://localhost:4173,http://localhost:3000}
             allowedMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
             allowedHeaders: "*"
             exposedHeaders: [Authorization, Retry-After]
@@ -48,6 +48,24 @@ spring:
               args:
                 name: authServiceCircuitBreaker
                 fallbackUri: forward:/fallback/auth
+            - name: Retry
+              args:
+                retries: 3
+                # Retry ONLY on a connection-level failure, never on a response status.
+                # A ConnectException means the request never reached the service, so
+                # replaying it is safe even for POST — it cannot double-create a booking.
+                # Retrying a 5xx *response* would not be safe, hence the empty series.
+                series: []
+                statuses: []
+                methods: GET,POST,PUT,PATCH,DELETE
+                exceptions:
+                  - java.net.ConnectException
+                  - java.io.IOException
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 600ms
+                  factor: 2
+                  basedOnPreviousValue: false
 
         # ── room-service ──────────────────────────────────────────────────────────
         - id: room-service
@@ -59,6 +77,24 @@ spring:
               args:
                 name: roomServiceCircuitBreaker
                 fallbackUri: forward:/fallback/rooms
+            - name: Retry
+              args:
+                retries: 3
+                # Retry ONLY on a connection-level failure, never on a response status.
+                # A ConnectException means the request never reached the service, so
+                # replaying it is safe even for POST — it cannot double-create a booking.
+                # Retrying a 5xx *response* would not be safe, hence the empty series.
+                series: []
+                statuses: []
+                methods: GET,POST,PUT,PATCH,DELETE
+                exceptions:
+                  - java.net.ConnectException
+                  - java.io.IOException
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 600ms
+                  factor: 2
+                  basedOnPreviousValue: false
 
         # ── booking-service ───────────────────────────────────────────────────────
         - id: booking-service
@@ -70,6 +106,24 @@ spring:
               args:
                 name: bookingServiceCircuitBreaker
                 fallbackUri: forward:/fallback/bookings
+            - name: Retry
+              args:
+                retries: 3
+                # Retry ONLY on a connection-level failure, never on a response status.
+                # A ConnectException means the request never reached the service, so
+                # replaying it is safe even for POST — it cannot double-create a booking.
+                # Retrying a 5xx *response* would not be safe, hence the empty series.
+                series: []
+                statuses: []
+                methods: GET,POST,PUT,PATCH,DELETE
+                exceptions:
+                  - java.net.ConnectException
+                  - java.io.IOException
+                backoff:
+                  firstBackoff: 100ms
+                  maxBackoff: 600ms
+                  factor: 2
+                  basedOnPreviousValue: false
 
         # ── Aggregated OpenAPI documents ──────────────────────────────────────────
         # Each service's spec is proxied so the gateway's Swagger UI can offer all three
@@ -121,7 +175,11 @@ eureka:
   client:
     enabled: ${EUREKA_ENABLED:true}
     service-url:
-      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+      defaultZone: ${EUREKA_URL:http://localhost:9761/eureka/}
+    # Default is 30s. That leaves a window after a service becomes healthy where this
+    # client still believes no instance exists — which on a fresh `docker compose up`
+    # surfaced as transient 503s from the gateway even though every container was healthy.
+    registry-fetch-interval-seconds: ${EUREKA_FETCH_INTERVAL:5}
   instance:
     prefer-ip-address: true
     lease-renewal-interval-in-seconds: 10
@@ -176,11 +234,11 @@ spring:
         simple:
           instances:
             auth-service:
-              - uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+              - uri: ${AUTH_SERVICE_URL:http://localhost:9081}
             room-service:
-              - uri: ${ROOM_SERVICE_URL:http://localhost:8082}
+              - uri: ${ROOM_SERVICE_URL:http://localhost:9082}
             booking-service:
-              - uri: ${BOOKING_SERVICE_URL:http://localhost:8083}
+              - uri: ${BOOKING_SERVICE_URL:http://localhost:9083}
 
 eureka:
   client:

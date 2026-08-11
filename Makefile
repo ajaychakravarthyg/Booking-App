@@ -7,7 +7,7 @@
 #   make race        prove concurrent double-bookings are rejected
 
 SHELL := /bin/bash
-GATEWAY ?= http://localhost:8080
+GATEWAY ?= http://localhost:9080
 SERVICES := discovery-server api-gateway auth-service room-service booking-service
 
 .DEFAULT_GOAL := help
@@ -29,7 +29,7 @@ up: ## Build and start the full stack (Postgres + Eureka + 4 services + frontend
 	@echo
 	@echo "  app       http://localhost:3000"
 	@echo "  swagger   $(GATEWAY)/swagger-ui.html"
-	@echo "  eureka    http://localhost:8761"
+	@echo "  eureka    http://localhost:9761"
 	@echo "  login     admin@hotel.com / Admin@12345"
 
 down: ## Stop everything, keep the database
@@ -51,7 +51,7 @@ build: ## Compile every Java service without Docker
 test: ## Run every Java service's tests
 	@for s in $(SERVICES); do echo "── $$s"; (cd $$s && mvn -B test) || exit 1; done
 
-frontend-dev: ## Vite dev server on :5173, proxying /api to the gateway
+frontend-dev: ## Vite dev server on :5174, proxying /api to the gateway
 	cd frontend && npm install && npm run dev
 
 frontend-build: ## Production frontend build

@@ -2,6 +2,7 @@ package com.hotelbooking.booking.config;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.annotation.Order;
@@ -46,6 +47,19 @@ public class BookingConstraintInstaller implements ApplicationRunner {
 
     private final JdbcTemplate jdbcTemplate;
 
+    /**
+     * The schema Hibernate puts our tables in.
+     *
+     * <p>Must be read from configuration rather than inferred with {@code current_schema()}.
+     * {@code hibernate.default_schema} only makes Hibernate *qualify* its own SQL — it does
+     * not change the JDBC session's {@code search_path}, which stays at the PostgreSQL
+     * default of {@code "$user", public}. So {@code current_schema()} reports {@code public}
+     * while the tables actually live in {@code booking_service}, and an unqualified
+     * {@code ALTER TABLE bookings} resolves to a table that does not exist.
+     */
+    @Value("${spring.jpa.properties.hibernate.default_schema:public}")
+    private String schema;
+
     @Override
     public void run(ApplicationArguments args) {
         String product;
@@ -77,23 +91,27 @@ public class BookingConstraintInstaller implements ApplicationRunner {
         }
 
         try {
-            String schema = currentSchema();
-            if (constraintExists(schema)) {
-                log.info("Overlap constraint '{}' already present", CONSTRAINT_NAME);
+            if (constraintExists()) {
+                log.info("Overlap constraint '{}' already present in schema '{}'",
+                        CONSTRAINT_NAME, schema);
                 return;
             }
 
+            // The table is schema-qualified deliberately — see the note on the `schema` field.
+            // btree_gist lives in `public`, which is on the default search_path, so the gist
+            // operator classes resolve without qualification.
             jdbcTemplate.execute("""
-                    ALTER TABLE bookings
+                    ALTER TABLE %s.bookings
                     ADD CONSTRAINT %s
                     EXCLUDE USING gist (
                         room_id WITH =,
                         daterange(check_in_date, check_out_date, '[)') WITH &&
                     ) WHERE (status = 'CONFIRMED')
-                    """.formatted(CONSTRAINT_NAME));
+                    """.formatted(quoteIdentifier(schema), CONSTRAINT_NAME));
 
-            log.info("Installed exclusion constraint '{}' — overlapping confirmed bookings "
-                    + "are now rejected by PostgreSQL itself", CONSTRAINT_NAME);
+            log.info("Installed exclusion constraint '{}' on {}.bookings — overlapping "
+                    + "confirmed bookings are now rejected by PostgreSQL itself",
+                    CONSTRAINT_NAME, schema);
 
         } catch (Exception ex) {
             // The most likely cause is pre-existing overlapping rows created before the
@@ -106,17 +124,22 @@ public class BookingConstraintInstaller implements ApplicationRunner {
         }
     }
 
-    private String currentSchema() {
-        String schema = jdbcTemplate.queryForObject("select current_schema()", String.class);
-        return schema == null ? "public" : schema;
-    }
-
-    private boolean constraintExists(String schema) {
+    private boolean constraintExists() {
         Integer count = jdbcTemplate.queryForObject("""
                 select count(*) from pg_constraint c
                 join pg_namespace n on n.oid = c.connamespace
                 where c.conname = ? and n.nspname = ?
                 """, Integer.class, CONSTRAINT_NAME, schema);
         return count != null && count > 0;
+    }
+
+    /**
+     * A schema name cannot be a bind parameter in DDL, so it is interpolated — which means
+     * it must be quoted and escaped rather than trusted. The value comes from our own
+     * configuration, not user input, but interpolating identifiers unescaped is the habit
+     * that produces SQL injection the day one of them becomes externally supplied.
+     */
+    private String quoteIdentifier(String identifier) {
+        return '"' + identifier.replace("\"", "\"\"") + '"';
     }
 }

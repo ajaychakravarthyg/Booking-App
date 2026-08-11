@@ -9,7 +9,7 @@
 
 set -uo pipefail
 
-GATEWAY="${1:-http://localhost:8080}"
+GATEWAY="${1:-http://localhost:9080}"
 PASS=0
 FAIL=0
 
@@ -41,6 +41,23 @@ json_field() { grep -oP "\"$1\":\s*\"?\K[^\",}]+" <<<"$2" | head -1; }
 
 echo
 echo "Smoke test → $GATEWAY"
+echo
+
+# Wait until the gateway can actually ROUTE to every service, not merely until its own
+# /actuator/health answers. Health proves the gateway is up; routing additionally requires
+# the service registry to have converged, and a just-restarted instance can linger in
+# Eureka as a stale entry for a few seconds.
+printf '  waiting for routes to converge'
+for _ in $(seq 1 40); do
+  R=$(curl -s -o /dev/null -w '%{http_code}' "$GATEWAY/api/rooms" 2>/dev/null)
+  B=$(curl -s -o /dev/null -w '%{http_code}' "$GATEWAY/api/bookings/search" 2>/dev/null)
+  A=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$GATEWAY/api/auth/login" \
+        -H 'Content-Type: application/json' -d '{"email":"x@y.z","password":"nope"}' 2>/dev/null)
+  # 401 from login is a healthy answer — it means auth-service was reached.
+  if [[ "$R" == "200" && "$B" == "200" && "$A" == "401" ]]; then echo " ready"; break; fi
+  printf '.'
+  sleep 2
+done
 echo
 
 # ── Availability ──────────────────────────────────────────────────────────────────

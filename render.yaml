@@ -40,7 +40,7 @@ services:
     healthCheckPath: /actuator/health
     envVars:
       - key: SERVER_PORT
-        value: 8761
+        value: 9761
       - key: EUREKA_HOSTNAME
         value: hotel-discovery
 
@@ -55,7 +55,7 @@ services:
     healthCheckPath: /actuator/health/readiness
     envVars:
       - key: SERVER_PORT
-        value: 8081
+        value: 9081
       - key: SPRING_PROFILES_ACTIVE
         value: postgres
       # Paste your Neon/Supabase JDBC URL. Must be the jdbc: form, e.g.
@@ -93,7 +93,7 @@ services:
     healthCheckPath: /actuator/health/readiness
     envVars:
       - key: SERVER_PORT
-        value: 8082
+        value: 9082
       - key: SPRING_PROFILES_ACTIVE
         value: postgres
       - key: DB_URL
@@ -122,7 +122,7 @@ services:
     healthCheckPath: /actuator/health/readiness
     envVars:
       - key: SERVER_PORT
-        value: 8083
+        value: 9083
       - key: SPRING_PROFILES_ACTIVE
         value: postgres
       - key: DB_URL
@@ -151,7 +151,7 @@ services:
     healthCheckPath: /actuator/health/readiness
     envVars:
       - key: SERVER_PORT
-        value: 8080
+        value: 9080
       - key: EUREKA_URL
         value: https://hotel-discovery.onrender.com/eureka/
       # Your Vercel domain(s). The pattern form covers preview deployments.

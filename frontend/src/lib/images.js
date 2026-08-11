@@ -31,6 +31,19 @@ export const HERO = {
   guests: img('1600585154340-be6161a56a0c', 1600, 360),
 }
 
+/**
+ * Rotating travel photography for the auth pages — deliberately world-spanning rather than
+ * hotel interiors, because signing in is about the trip, not the room.
+ */
+export const AUTH_GALLERY = [
+  { src: img('1512453979798-5ea266f8880c', 1200, 1600), place: 'Lisbon', country: 'Portugal' },
+  { src: img('1578469645742-46cae010e5d4', 1200, 1600), place: 'Kyoto', country: 'Japan' },
+  { src: img('1504893524553-b855bce32c67', 1200, 1600), place: 'Reykjavík', country: 'Iceland' },
+  { src: img('1597212618440-806262de4f6b', 1200, 1600), place: 'Marrakesh', country: 'Morocco' },
+  { src: img('1506377247377-2a5b3b417ebb', 1200, 1600), place: 'Edinburgh', country: 'Scotland' },
+  { src: img('1580060839134-75a5edca2e99', 1200, 1600), place: 'Cape Town', country: 'South Africa' },
+]
+
 /** Shown when a room has no image, or its URL fails to load. */
 export const ROOM_PLACEHOLDER = img('1595576508898-0ad5c879a061', 800, 600)
 

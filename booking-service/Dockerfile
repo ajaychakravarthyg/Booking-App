@@ -39,7 +39,7 @@ EXPOSE 9083
 ENV JAVA_OPTS="-XX:MaxRAMPercentage=75 -XX:+UseSerialGC -XX:TieredStopAtLevel=1"
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=50s --retries=5 \
-  CMD wget -q --spider http://localhost:9083/actuator/health/readiness || exit 1
+  CMD wget -q --spider http://127.0.0.1:9083/actuator/health/readiness || exit 1
 
 # Shell form so $JAVA_OPTS is expanded; exec so the JVM is PID 1 and receives SIGTERM
 # directly, which lets Spring's graceful shutdown actually run.

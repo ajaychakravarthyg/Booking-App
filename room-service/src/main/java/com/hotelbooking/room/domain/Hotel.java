@@ -21,6 +21,7 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -80,6 +81,24 @@ public class Hotel {
 
     @Column(length = 250)
     private String address;
+
+    /**
+     * WGS84 coordinates, nullable because a property can be listed before anyone geocodes it.
+     *
+     * <p>{@code precision = 9, scale = 6} is deliberate: six decimal places is ~11cm at the
+     * equator, far beyond what a hotel needs, and it keeps the value exact. A {@code double}
+     * would introduce binary rounding into distance maths for no benefit.
+     *
+     * <p>Plain columns rather than a PostGIS {@code geography} type — the distance queries
+     * here use a bounding box plus Haversine, which works identically on H2 and PostgreSQL
+     * and needs no extension. PostGIS would be the right answer at a scale where a GiST
+     * spatial index matters; see README > What I would do next.
+     */
+    @Column(precision = 9, scale = 6)
+    private BigDecimal latitude;
+
+    @Column(precision = 9, scale = 6)
+    private BigDecimal longitude;
 
     @Column(length = 2000)
     private String description;

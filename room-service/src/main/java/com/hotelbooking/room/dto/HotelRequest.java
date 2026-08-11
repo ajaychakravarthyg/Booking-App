@@ -1,12 +1,15 @@
 package com.hotelbooking.room.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @Schema(description = "Admin payload for creating or replacing a hotel")
@@ -32,6 +35,17 @@ public record HotelRequest(
         @Size(max = 250)
         @Schema(example = "12 Rua do Comércio")
         String address,
+
+        @DecimalMin(value = "-90.0", message = "Latitude must be between -90 and 90")
+        @DecimalMax(value = "90.0", message = "Latitude must be between -90 and 90")
+        @Schema(example = "38.7071", description = "WGS84. Optional, but a property without "
+                + "coordinates cannot appear in 'near me' results.")
+        BigDecimal latitude,
+
+        @DecimalMin(value = "-180.0", message = "Longitude must be between -180 and 180")
+        @DecimalMax(value = "180.0", message = "Longitude must be between -180 and 180")
+        @Schema(example = "-9.1355")
+        BigDecimal longitude,
 
         @Size(max = 2000)
         String description,

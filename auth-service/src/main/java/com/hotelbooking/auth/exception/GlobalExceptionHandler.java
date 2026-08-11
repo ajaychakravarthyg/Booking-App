@@ -10,6 +10,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.LinkedHashMap;
@@ -72,6 +73,35 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.badRequest().body(ApiErrorResponse.validation(
                 HttpStatus.BAD_REQUEST.value(), "Validation failed", request.getRequestURI(), fieldErrors));
+    }
+
+    /**
+     * Constraint failures on request parameters and path variables.
+     *
+     * <p>Spring Framework 6.1 moved these from {@code ConstraintViolationException} to
+     * {@code HandlerMethodValidationException}, which is thrown for annotations like
+     * {@code @Min} or {@code @DecimalMax} placed directly on a controller method argument.
+     * Without this handler they fall through to the catch-all below and surface as a 500 —
+     * which is exactly what happened here: {@code ?guests=0} returned "an unexpected error
+     * occurred" instead of naming the offending parameter. Body validation was unaffected,
+     * since that path throws MethodArgumentNotValidException, which is why this went unnoticed.
+     */
+    @ExceptionHandler(HandlerMethodValidationException.class)
+    public ResponseEntity<ApiErrorResponse> handleParameterValidation(
+            HandlerMethodValidationException ex, HttpServletRequest request) {
+
+        Map<String, String> fieldErrors = new LinkedHashMap<>();
+        ex.getParameterValidationResults().forEach(result -> {
+            String name = result.getMethodParameter().getParameterName();
+            result.getResolvableErrors().forEach(error ->
+                    fieldErrors.putIfAbsent(
+                            name == null ? "parameter" : name,
+                            error.getDefaultMessage()));
+        });
+
+        return ResponseEntity.badRequest().body(ApiErrorResponse.validation(
+                HttpStatus.BAD_REQUEST.value(), "Invalid request parameter",
+                request.getRequestURI(), fieldErrors));
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)

@@ -23,7 +23,11 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
+# 127.0.0.1, not localhost. Inside the container `localhost` resolves to BOTH 127.0.0.1
+# and ::1, BusyBox wget tries the IPv6 address first, and nginx listens only on 0.0.0.0 —
+# so the probe got "connection refused" and the container reported unhealthy forever while
+# serving traffic perfectly. Pinning the address family removes the ambiguity.
 HEALTHCHECK --interval=15s --timeout=4s --start-period=8s --retries=3 \
-  CMD wget -q --spider http://localhost/ || exit 1
+  CMD wget -q --spider http://127.0.0.1/ || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]

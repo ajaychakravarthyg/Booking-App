@@ -150,11 +150,15 @@ export const usersApi = {
 /** Destinations — the derived city list behind the search autocomplete. */
 export const citiesApi = {
   list: (params) => api.get('/api/cities', { params }),
+  /** Destinations ranked by distance from a point. Not radius-filtered — see the API docs. */
+  nearest: (params) => api.get('/api/cities/nearest', { params }),
 }
 
 /** Properties. Reads are public; writes need an ADMIN token. */
 export const hotelsApi = {
   list: (params) => api.get('/api/hotels', { params }),
+  /** Proximity search. Takes over from the attribute filters rather than combining with them. */
+  nearby: (params) => api.get('/api/hotels', { params }),
   get: (id) => api.get(`/api/hotels/${id}`),
   rooms: (id) => api.get(`/api/hotels/${id}/rooms`),
   create: (payload) => api.post('/api/hotels', payload),

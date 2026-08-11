@@ -23,6 +23,7 @@ Built to be read as much as run: the interesting parts are the [availability log
 - [What it does](#-what-it-does)
 - [Architecture](#-architecture)
 - [How city search works](#-how-city-search-works)
+- [Location detection](#-location-detection)
 - [The interesting part: preventing double-bookings](#-the-interesting-part-preventing-double-bookings)
 - [Tech stack](#-tech-stack)
 - [Screenshots](#-screenshots)
@@ -39,6 +40,7 @@ Built to be read as much as run: the interesting parts are the [availability log
 ## ✨ What it does
 
 **Guests**
+- **Destinations near you, detected without a permission prompt** — the browser's timezone and locale give a coarse location instantly; precise GPS is offered but only used on an explicit click
 - **Search by destination** — a city autocomplete built from the properties themselves, so it can never offer a city with nothing in it
 - Get **suggested hotels that genuinely have rooms free** for the dates; sold-out properties are omitted, not shown then discovered empty
 - See the cheapest **available** rate per property — not a headline price belonging to a room someone else already took
@@ -177,6 +179,51 @@ Sold-out properties are **omitted** rather than listed as unavailable: a suggest
 
 ---
 
+## 📍 Location detection
+
+Two tiers, and the ordering is the design.
+
+**Tier 1 — instant, no permission, no network.** The browser already knows roughly where it is, for free:
+
+```js
+Intl.DateTimeFormat().resolvedOptions().timeZone  // "Europe/Lisbon" → city
+navigator.language                                // "pt-PT"        → region
+```
+
+That is enough to say "looks like you're in Lisbon", preselect the destination, mark the spot on the world map, and start the auth-page photo rotation on a city the visitor recognises — all before first paint, with no prompt and no third-party request.
+
+**Tier 2 — precise, only on a click.** `navigator.geolocation` gives real coordinates, which `GET /api/cities/nearest?lat=&lng=` turns into distance-ranked destinations. It is deliberately **not** called on mount: an unprompted permission dialog is hostile, and browsers increasingly throttle sites that do it.
+
+**Why not IP geolocation?** It needs a third-party service on every page load — an external dependency, a rate limit, a privacy disclosure and one more thing to fail. The timezone heuristic gets most of the value with none of that.
+
+Each failure mode gets its own message, because "denied" is the user's choice and shouldn't read like a fault:
+
+| Situation | Handling |
+|---|---|
+| Permission denied | "You can still search by typing a city" — a warning, not an error |
+| Insecure origin (plain http) | Says so explicitly; geolocation is gated on a secure context and would otherwise just hang |
+| Timeout / unavailable | Suggests retrying |
+| Detected city we don't sell | "Nothing there yet, but plenty nearby" — then ranks everywhere by distance |
+
+### The distance maths
+
+`Hotel` carries `latitude`/`longitude` as `DECIMAL(9,6)` — six decimals is ~11cm, and exact decimal avoids putting binary rounding into distance arithmetic.
+
+Radius search is **two-stage**: a bounding-box `BETWEEN` query the database can serve from an index, then exact Haversine in Java to trim the box's corners. Filtering by trigonometric distance in SQL would force a full scan and compute a distance for every row.
+
+The box widens toward the poles, dividing the longitude span by `cos(latitude)` — a degree of longitude is 111km at the equator but 48km in Reykjavík, so a fixed box would make "within 50km" mean different things in different places:
+
+```
+lat  0.00 → lon span ±0.450°      lat 64.10 → lon span ±1.029°
+lat 38.70 → lon span ±0.576°      lat 89.99 → lon span ±180° (clamped)
+```
+
+Verified against published distances: Tokyo→Kyoto **358.9km**, Berlin→Edinburgh **1,141km**, New York→Reykjavík **4,204km**, and the two Lisbon hotels **0.92km** apart. Asserted in the smoke test so it cannot regress.
+
+Known limits, stated plainly: Haversine assumes a sphere so it is up to ~0.5% off the true ellipsoid (irrelevant when rounding to the nearest km); distances are great-circle, not travel distance; and a bounding box straddling the antimeridian matches nothing on the wrapped side. PostGIS with a GiST index is the right answer at a scale where any of that matters.
+
+---
+
 ## 🔒 The interesting part: preventing double-bookings
 
 Two bookings for the same room conflict when their date ranges overlap. Because a hotel night is a **half-open interval** — you occupy `[checkIn, checkOut)` and leave on the check-out morning — the comparison is strict on both sides:
@@ -235,6 +282,14 @@ PostgreSQL could not infer the parameter's type, because it appears in an `IS NU
 The fix was to stop binding a null at all: the repository now takes a ready-made LIKE pattern, and the service passes `'%'` for "no filter". One code path, no typed-null, portable across both engines.
 
 The lesson is the one worth keeping: **H2 is not a stand-in for PostgreSQL.** It is here so `mvn spring-boot:run` needs no setup, and the compose stack runs the real engine precisely so differences like this surface before deployment rather than after.
+
+### Every query parameter was returning 500 instead of 400
+
+`?guests=0` violates `@Min(1)`, so it should be a 400 naming the parameter. It returned **500 "an unexpected error occurred"** — and so did every other query-parameter constraint in the platform, across all three services.
+
+Spring Framework 6.1 moved method-parameter validation failures from `ConstraintViolationException` to **`HandlerMethodValidationException`**, and I had a handler for the former but not the latter, so they fell through to the catch-all. Request *body* validation was unaffected — that path throws `MethodArgumentNotValidException`, which I did handle — which is precisely why it went unnoticed: every test I had written exercised bodies, not parameters.
+
+Six endpoints were affected. All now return 400 with the offending parameter named, and the smoke test asserts four of them so the gap cannot silently reopen.
 
 ### One more resilience gap this exposed
 
@@ -530,7 +585,8 @@ Interactive docs, all three services in one dropdown: **<http://localhost:9080/s
 | Method | Path | Access | |
 |---|---|---|---|
 | `GET` | `/api/cities` | public | **The destination list**, derived from the hotels. `?q=` filters for autocomplete. Only cities with a listed hotel appear. Cached 5 min. |
-| `GET` | `/api/hotels` | public | Properties. Filters: `city` (exact) `country` `minStars` `q` `active`. Carries `roomCount` and `priceFrom` — both **date-blind**. |
+| `GET` | `/api/cities/nearest` | public | **Destinations ranked by distance** from `lat`/`lng`. Not radius-filtered — someone with nothing nearby still learns the closest option. |
+| `GET` | `/api/hotels` | public | Properties. Filters: `city` (exact) `country` `minStars` `q` `active`. Carries `roomCount` and `priceFrom` — both **date-blind**. Adding `nearLat`+`nearLng`+`radiusKm` switches to a proximity search with `distanceKm`, nearest first. |
 | `GET` | `/api/hotels/{id}` | public | One property |
 | `GET` | `/api/hotels/{id}/rooms` | public | Its rooms, cheapest first. 404 for an unknown hotel, not an empty list. |
 | `POST` | `/api/hotels` | **ADMIN** | Create. 409 if that name already exists **in that city** — chains reuse names across cities. |

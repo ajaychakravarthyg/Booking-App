@@ -5,6 +5,10 @@ import com.hotelbooking.room.service.HotelService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
@@ -50,5 +54,36 @@ public class CityController {
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.maxAge(Duration.ofMinutes(5)).cachePublic())
                 .body(cities);
+    }
+
+    @Operation(summary = "Destinations nearest to a point",
+            description = """
+                    Public. Given coordinates — typically from the browser's Geolocation API —
+                    returns our destinations ordered by distance.
+
+                    A city's distance is that of its **nearest hotel**, not a city centroid: what
+                    matters is how far away the thing you can actually book is.
+
+                    Deliberately **not** radius-filtered. Someone opening the app where this
+                    catalogue has nothing should still learn that the closest option is 1,300km
+                    away, rather than receive an empty list.
+
+                    Distances are great-circle (Haversine), not travel distance — a road route is
+                    always longer.
+                    """)
+    @GetMapping("/nearest")
+    public ResponseEntity<List<CityResponse>> findNearest(
+            @Parameter(description = "Latitude, -90 to 90", example = "38.7071", required = true)
+            @RequestParam @DecimalMin("-90.0") @DecimalMax("90.0") double lat,
+
+            @Parameter(description = "Longitude, -180 to 180", example = "-9.1355", required = true)
+            @RequestParam @DecimalMin("-180.0") @DecimalMax("180.0") double lng,
+
+            @Parameter(description = "Maximum destinations to return")
+            @RequestParam(defaultValue = "6") @Min(1) @Max(50) int limit) {
+
+        // Not cached: the response depends on the caller's coordinates, so a shared cache would
+        // serve one visitor's nearest cities to the next.
+        return ResponseEntity.ok(hotelService.findNearestCities(lat, lng, limit));
     }
 }

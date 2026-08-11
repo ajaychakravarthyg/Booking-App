@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, Building2, ShieldCheck, Sparkles } from 'lucide-react'
 import { citiesApi } from '@/lib/api'
+import { useDetectedLocation } from '@/hooks/useDetectedLocation'
 import { CitySearchForm } from '@/components/CitySearchForm'
+import { NearbyDestinations } from '@/components/NearbyDestinations'
 import { Card } from '@/components/ui/Card'
 import { Skeleton } from '@/components/ui/Feedback'
 import { HERO } from '@/lib/images'
@@ -19,6 +21,16 @@ export default function Home() {
   const navigate = useNavigate()
   const [cities, setCities] = useState([])
   const [loadingCities, setLoadingCities] = useState(true)
+
+  const {
+    hint,
+    matchedCity,
+    nearest,
+    locating,
+    error: locationError,
+    isPrecise,
+    requestPreciseLocation,
+  } = useDetectedLocation()
 
   useEffect(() => {
     citiesApi
@@ -65,69 +77,44 @@ export default function Home() {
           </p>
 
           <Card className="mt-8 p-5 text-left sm:p-6">
-            <CitySearchForm onSearch={handleSearch} />
+            {/* Preseeded with the detected city when it is a destination we sell, so a visitor
+                in Lisbon can hit Search immediately. Only ever a default — the field stays
+                fully editable, and an unrecognised city is still refused. */}
+            <CitySearchForm
+              initial={matchedCity ? { city: matchedCity.city } : undefined}
+              onSearch={handleSearch}
+            />
           </Card>
         </div>
       </section>
 
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-        {/* ── Destinations ─────────────────────────────────────────────────────── */}
-        <section>
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <div>
-              <h2 className="text-xl font-bold tracking-tight sm:text-2xl">
-                Where we have hotels
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                This list is derived from the properties themselves, so every destination here
-                has something to book.
-              </p>
-            </div>
-          </div>
+        {/* ── Destinations, location-aware ─────────────────────────────────────── */}
+        <NearbyDestinations
+          hint={hint}
+          matchedCity={matchedCity}
+          // Precise coordinates give real distances; otherwise fall back to the plain list so
+          // the section is never empty while waiting for a permission the visitor may refuse.
+          nearest={isPrecise && nearest.length > 0 ? nearest : cities}
+          locating={locating}
+          error={locationError}
+          isPrecise={isPrecise}
+          onRequestLocation={requestPreciseLocation}
+        />
 
-          {loadingCities ? (
-            <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-              {Array.from({ length: 6 }).map((_, index) => (
-                <Skeleton key={index} className="aspect-[4/5] rounded-xl" />
-              ))}
-            </div>
-          ) : cities.length === 0 ? (
-            <p className="mt-6 text-sm text-muted-foreground">
-              No destinations yet — an administrator needs to add a hotel first.
-            </p>
-          ) : (
-            <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-              {cities.map((city) => (
-                <Link
-                  key={`${city.city}-${city.country}`}
-                  to={{ pathname: '/search', search: `city=${encodeURIComponent(city.city)}` }}
-                  className="group relative isolate block aspect-[4/5] overflow-hidden rounded-xl border border-border bg-muted"
-                >
-                  {city.imageUrl && (
-                    <img
-                      src={city.imageUrl}
-                      alt=""
-                      aria-hidden="true"
-                      loading="lazy"
-                      className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
-                    />
-                  )}
-                  <div
-                    aria-hidden="true"
-                    className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent"
-                  />
-                  <div className="relative flex h-full flex-col justify-end p-3">
-                    <p className="font-semibold leading-tight text-white">{city.city}</p>
-                    <p className="text-xs text-white/75">{city.country}</p>
-                    <p className="mt-1 text-xs text-white/60">
-                      {pluralize(city.hotelCount, 'hotel')}
-                    </p>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </section>
+        {loadingCities && (
+          <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <Skeleton key={index} className="h-[5.75rem] rounded-xl" />
+            ))}
+          </div>
+        )}
+
+        {!loadingCities && cities.length === 0 && (
+          <p className="mt-6 text-sm text-muted-foreground">
+            No destinations yet — an administrator needs to add a hotel first.
+          </p>
+        )}
 
         {/* ── How it differs ───────────────────────────────────────────────────── */}
         <section className="mt-14 grid grid-cols-1 gap-5 sm:grid-cols-3">

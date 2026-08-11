@@ -15,11 +15,17 @@ public record HotelResponse(
         String city,
         String country,
         String address,
+        java.math.BigDecimal latitude,
+        java.math.BigDecimal longitude,
         String description,
         Integer starRating,
         String imageUrl,
         List<String> amenities,
         boolean active,
+        @Schema(description = "Straight-line distance from the searched point, in km. Present "
+                + "only when the request supplied nearLat/nearLng. Great-circle, not travel "
+                + "distance — a road route is always longer.")
+        Double distanceKm,
         @Schema(description = "Number of in-service rooms. Null when not requested.")
         Long roomCount,
         @Schema(description = "Cheapest in-service nightly rate — the 'from' price. "
@@ -30,21 +36,29 @@ public record HotelResponse(
         Instant updatedAt
 ) {
     public static HotelResponse from(Hotel hotel) {
-        return from(hotel, null, null);
+        return from(hotel, null, null, null);
     }
 
     public static HotelResponse from(Hotel hotel, Long roomCount, BigDecimal priceFrom) {
+        return from(hotel, roomCount, priceFrom, null);
+    }
+
+    public static HotelResponse from(Hotel hotel, Long roomCount, BigDecimal priceFrom,
+                                     Double distanceKm) {
         return new HotelResponse(
                 hotel.getId(),
                 hotel.getName(),
                 hotel.getCity(),
                 hotel.getCountry(),
                 hotel.getAddress(),
+                hotel.getLatitude(),
+                hotel.getLongitude(),
                 hotel.getDescription(),
                 hotel.getStarRating(),
                 hotel.getImageUrl(),
                 splitAmenities(hotel.getAmenities()),
                 hotel.isActive(),
+                distanceKm,
                 roomCount,
                 priceFrom,
                 hotel.getCreatedAt(),

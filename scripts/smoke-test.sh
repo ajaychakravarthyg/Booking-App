@@ -89,6 +89,63 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# ── Geo ───────────────────────────────────────────────────────────────────────────
+echo
+echo "Location awareness"
+# Lisbon's own coordinates: the nearest destination must be Lisbon itself, ~0km.
+assert 200 "GET /api/cities/nearest (from Lisbon)" \
+  "$GATEWAY/api/cities/nearest?lat=38.7071&lng=-9.1355"
+NEAREST_CITY=$(grep -oP '"city":"\K[^"]+' <<<"$LAST_BODY" | head -1)
+NEAREST_KM=$(grep -oP '"distanceKm":\K[0-9.]+' <<<"$LAST_BODY" | head -1)
+echo "      $(dim "closest is $NEAREST_CITY at ${NEAREST_KM}km")"
+# A city 11,000km away must not rank first — that would mean the sort or the maths is wrong.
+if awk "BEGIN{exit !(${NEAREST_KM:-99999} < 5)}"; then
+  printf '  %s %-56s %s\n' "$(green '✓')" "  └ nearest is within 5km, correctly ranked first" "$(dim "${NEAREST_KM}km")"
+  PASS=$((PASS + 1))
+else
+  printf '  %s %-56s %s\n' "$(red '✗')" "  └ nearest was ${NEAREST_KM}km from Lisbon" "$(red 'ranking or Haversine wrong')"
+  FAIL=$((FAIL + 1))
+fi
+
+# Tokyo -> Kyoto is ~360km. A wildly different figure means the projection or radius is off.
+assert 200 "GET /api/cities/nearest (from Tokyo → Kyoto)" \
+  "$GATEWAY/api/cities/nearest?lat=35.6762&lng=139.6503&limit=1"
+TOKYO_CITY=$(grep -oP '"city":"\K[^"]+' <<<"$LAST_BODY" | head -1)
+TOKYO_KM=$(grep -oP '"distanceKm":\K[0-9.]+' <<<"$LAST_BODY" | head -1)
+if [[ "$TOKYO_CITY" == "Kyoto" ]] && awk "BEGIN{exit !(${TOKYO_KM:-0} > 300 && ${TOKYO_KM:-0} < 420)}"; then
+  printf '  %s %-56s %s\n' "$(green '✓')" "  └ Kyoto at ${TOKYO_KM}km (published ~360km)" "$(dim 'distance sane')"
+  PASS=$((PASS + 1))
+else
+  printf '  %s %-56s %s\n' "$(red '✗')" "  └ got $TOKYO_CITY at ${TOKYO_KM}km" "$(red 'expected Kyoto ~360km')"
+  FAIL=$((FAIL + 1))
+fi
+
+assert 200 "GET /api/hotels?nearLat&nearLng (5km of Lisbon)" \
+  "$GATEWAY/api/hotels?nearLat=38.7071&nearLng=-9.1355&radiusKm=5"
+NEAR_COUNT=$(grep -o '"hotelId"\|"id":' <<<"$LAST_BODY" | wc -l)
+echo "      $(dim "$NEAR_COUNT hotel(s) within 5km")"
+assert 200 "GET /api/hotels near Berlin (nothing within 100km → empty)" \
+  "$GATEWAY/api/hotels?nearLat=52.52&nearLng=13.405&radiusKm=100"
+if [[ "$LAST_BODY" == "[]" ]]; then
+  printf '  %s %-56s %s\n' "$(green '✓')" "  └ empty, as expected" "$(dim 'radius respected')"
+  PASS=$((PASS + 1))
+else
+  printf '  %s %-56s %s\n' "$(red '✗')" "  └ returned hotels 100km from Berlin" "$(red 'radius ignored')"
+  FAIL=$((FAIL + 1))
+fi
+assert 400 "GET /api/hotels?nearLat only (→ 400)" "$GATEWAY/api/hotels?nearLat=38.7"
+assert 400 "GET /api/cities/nearest?lat=999 (→ 400, not 500)" \
+  "$GATEWAY/api/cities/nearest?lat=999&lng=0"
+
+# Parameter-constraint handling across the platform — these all returned 500 before the
+# HandlerMethodValidationException handler existed.
+echo
+echo "Request-parameter validation"
+assert 400 "GET /api/rooms?guests=0" "$GATEWAY/api/rooms?guests=0"
+assert 400 "GET /api/rooms?minPrice=-5" "$GATEWAY/api/rooms?minPrice=-5"
+assert 400 "GET /api/hotels?minStars=9" "$GATEWAY/api/hotels?minStars=9"
+assert 400 "GET /api/bookings/search?guests=0" "$GATEWAY/api/bookings/search?guests=0"
+
 # ── Availability ──────────────────────────────────────────────────────────────────
 echo
 echo "Public browsing"

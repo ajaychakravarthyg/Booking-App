@@ -55,6 +55,34 @@ public interface HotelRepository extends JpaRepository<Hotel, Long>, JpaSpecific
             """)
     List<Object[]> findCityImages();
 
+    /**
+     * Listed hotels inside a latitude/longitude box.
+     *
+     * <p>The box is the cheap half of a two-stage radius search: it is index-friendly and
+     * over-selects slightly, and the caller trims the corners with exact Haversine. Doing the
+     * trigonometry in SQL instead would mean computing a distance for every row in the table
+     * and could use no index at all.
+     */
+    @Query("""
+            select h from Hotel h
+            where h.active = true
+              and h.latitude is not null
+              and h.longitude is not null
+              and h.latitude between :minLat and :maxLat
+              and h.longitude between :minLon and :maxLon
+            """)
+    List<Hotel> findWithinBoundingBox(@Param("minLat") double minLat,
+                                      @Param("maxLat") double maxLat,
+                                      @Param("minLon") double minLon,
+                                      @Param("maxLon") double maxLon);
+
+    /** Every listed, geocoded hotel — the fallback when a radius search finds nothing nearby. */
+    @Query("""
+            select h from Hotel h
+            where h.active = true and h.latitude is not null and h.longitude is not null
+            """)
+    List<Hotel> findAllGeocoded();
+
     long countByActive(boolean active);
 
     @Query("select count(distinct h.city) from Hotel h where h.active = true")

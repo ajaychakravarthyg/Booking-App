@@ -71,7 +71,8 @@ public class RoomSeeder implements ApplicationRunner {
 
         // ── Lisbon (2 hotels) ─────────────────────────────────────────────────────
         hotels.add(hotel("The Riverside Grand", "Lisbon", "Portugal",
-                "12 Rua do Comércio, Baixa", 5,
+                "12 Rua do Comércio, Baixa",
+                "38.707500", "-9.136400", 5,
                 "A restored 19th-century merchant house on the Tagus waterfront, minutes from "
                         + "Praça do Comércio.",
                 "1566073771259-6a8506099945",
@@ -95,7 +96,8 @@ public class RoomSeeder implements ApplicationRunner {
                                 "Wi-Fi, Terrace, River view, Kitchenette, Butler service"))));
 
         hotels.add(hotel("Alfama Tile House", "Lisbon", "Portugal",
-                "40 Beco das Cruzes, Alfama", 3,
+                "40 Beco das Cruzes, Alfama",
+                "38.712800", "-9.128200", 3,
                 "A tiled guesthouse in the oldest quarter, up the hill from the cathedral.",
                 "1631049307264-da0ec9d70304",
                 "Free Wi-Fi, Breakfast included, Terrace, Pet friendly",
@@ -115,7 +117,8 @@ public class RoomSeeder implements ApplicationRunner {
 
         // ── Kyoto (2 hotels) ──────────────────────────────────────────────────────
         hotels.add(hotel("Higashiyama Ryokan", "Kyoto", "Japan",
-                "3-14 Kodaiji Minamimonzen, Higashiyama", 5,
+                "3-14 Kodaiji Minamimonzen, Higashiyama",
+                "34.996300", "135.782500", 5,
                 "A traditional ryokan with cedar baths and a raked stone garden, a short walk "
                         + "from Kiyomizu-dera.",
                 "1578469645742-46cae010e5d4",
@@ -135,7 +138,8 @@ public class RoomSeeder implements ApplicationRunner {
                                 "Wi-Fi, Private onsen, Tea room, Veranda, Kaiseki service"))));
 
         hotels.add(hotel("Nijo Business Inn", "Kyoto", "Japan",
-                "88 Nishinotoin-dori, Nakagyo", 3,
+                "88 Nishinotoin-dori, Nakagyo",
+                "35.011600", "135.748000", 3,
                 "Straightforward, spotless rooms two minutes from Nijo Castle and the subway.",
                 "1554995207-c18c203602cb",
                 "Free Wi-Fi, Coin laundry, Vending, 24h reception",
@@ -155,7 +159,8 @@ public class RoomSeeder implements ApplicationRunner {
 
         // ── Reykjavík ─────────────────────────────────────────────────────────────
         hotels.add(hotel("Aurora Grand", "Reykjavík", "Iceland",
-                "7 Skólavörðustígur", 4,
+                "7 Skólavörðustígur",
+                "64.145500", "-21.926400", 4,
                 "Named for the lights it was built to watch — a glass-roofed lounge, geothermal "
                         + "baths, and blackout rooms for the midnight sun.",
                 "1551882547-ff40c63fe5fa",
@@ -180,7 +185,8 @@ public class RoomSeeder implements ApplicationRunner {
 
         // ── Marrakesh ─────────────────────────────────────────────────────────────
         hotels.add(hotel("Riad Dar Zellij", "Marrakesh", "Morocco",
-                "21 Derb Sidi Bouloukat, Medina", 4,
+                "21 Derb Sidi Bouloukat, Medina",
+                "31.628700", "-7.987800", 4,
                 "A courtyard riad with a plunge pool, orange trees and a roof terrace over the "
                         + "medina.",
                 "1600585154340-be6161a56a0c",
@@ -201,7 +207,8 @@ public class RoomSeeder implements ApplicationRunner {
 
         // ── Edinburgh ─────────────────────────────────────────────────────────────
         hotels.add(hotel("Old Town Chambers", "Edinburgh", "Scotland",
-                "5 Advocate's Close, Royal Mile", 4,
+                "5 Advocate's Close, Royal Mile",
+                "55.949900", "-3.190500", 4,
                 "Stone-vaulted rooms built into a 17th-century close, halfway down the Royal Mile.",
                 "1566073771259-6a8506099945",
                 "Free Wi-Fi, Whisky bar, Bike storage, Concierge",
@@ -221,7 +228,8 @@ public class RoomSeeder implements ApplicationRunner {
 
         // ── Cape Town ─────────────────────────────────────────────────────────────
         hotels.add(hotel("Table Bay Lodge", "Cape Town", "South Africa",
-                "18 Beach Road, Mouille Point", 4,
+                "18 Beach Road, Mouille Point",
+                "-33.899700", "18.405600", 4,
                 "Sea-facing lodge on the promenade, with Table Mountain filling the back windows.",
                 "1554995207-c18c203602cb",
                 "Infinity pool, Sea-facing terrace, Gym, Free Wi-Fi, Parking",
@@ -247,6 +255,7 @@ public class RoomSeeder implements ApplicationRunner {
     }
 
     private Hotel hotel(String name, String city, String country, String address,
+                        String latitude, String longitude,
                         Integer stars, String description, String photoId,
                         String amenities, List<Room> rooms) {
 
@@ -255,6 +264,10 @@ public class RoomSeeder implements ApplicationRunner {
                 .city(city)
                 .country(country)
                 .address(address)
+                // Real coordinates, so the distance maths and the "near me" ordering can be
+                // sanity-checked against known city-to-city distances.
+                .latitude(new BigDecimal(latitude))
+                .longitude(new BigDecimal(longitude))
                 .starRating(stars)
                 .description(description)
                 .imageUrl(IMG + photoId + HOTEL_PARAMS)

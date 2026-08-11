@@ -17,7 +17,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -48,19 +50,120 @@ public class HotelService {
                 ? "%"
                 : "%" + query.trim() + "%";
 
-        // First image wins: the query is already ordered by star rating descending.
-        Map<String, String> imageByCity = new HashMap<>();
-        for (Object[] row : hotelRepository.findCityImages()) {
-            imageByCity.putIfAbsent((String) row[0], (String) row[1]);
-        }
+        Map<String, String> imageByCity = representativeImageByCity();
 
         return hotelRepository.findCities(pattern).stream()
-                .map(row -> new CityResponse(
+                .map(row -> CityResponse.of(
                         (String) row[0],
                         (String) row[1],
                         ((Number) row[2]).longValue(),
                         imageByCity.get((String) row[0])))
                 .toList();
+    }
+
+    /**
+     * Destinations ordered by how close they are to a point.
+     *
+     * <p>A city's distance is that of its *nearest* hotel, not a city centroid — the guest cares
+     * how far away the thing they can book is.
+     *
+     * <p>Deliberately does not filter by radius. Someone opening the app in Berlin, where this
+     * catalogue has nothing, should still be shown that Edinburgh is 1,300km away rather than an
+     * empty list: a nearest-first ordering is useful even when nothing is genuinely near.
+     */
+    @Transactional(readOnly = true)
+    public List<CityResponse> findNearestCities(double latitude, double longitude, int limit) {
+        Map<String, String> imageByCity = representativeImageByCity();
+
+        // City -> [country, nearest distance, hotel count]
+        Map<String, Object[]> byCity = new LinkedHashMap<>();
+        for (Hotel hotel : hotelRepository.findAllGeocoded()) {
+            Double distance = GeoDistance.kilometresBetween(
+                    hotel.getLatitude(), hotel.getLongitude(),
+                    BigDecimal.valueOf(latitude), BigDecimal.valueOf(longitude));
+            if (distance == null) {
+                continue;
+            }
+            Object[] existing = byCity.get(hotel.getCity());
+            if (existing == null) {
+                byCity.put(hotel.getCity(),
+                        new Object[]{hotel.getCountry(), distance, 1L});
+            } else {
+                existing[1] = Math.min((Double) existing[1], distance);
+                existing[2] = ((Long) existing[2]) + 1L;
+            }
+        }
+
+        return byCity.entrySet().stream()
+                .map(entry -> new CityResponse(
+                        entry.getKey(),
+                        (String) entry.getValue()[0],
+                        (Long) entry.getValue()[2],
+                        imageByCity.get(entry.getKey()),
+                        round1((Double) entry.getValue()[1])))
+                .sorted(Comparator.comparingDouble(CityResponse::distanceKm))
+                .limit(limit)
+                .toList();
+    }
+
+    /**
+     * Hotels within {@code radiusKm} of a point, nearest first.
+     *
+     * <p>Two stages: a bounding-box query the database can serve from an index, then exact
+     * Haversine to trim the box's corners. Filtering by trigonometric distance in SQL would
+     * force a full scan and compute a distance for every hotel in the table.
+     *
+     * <p>Properties without coordinates are excluded rather than treated as distance zero — an
+     * ungeocoded hotel is unknown, not nearby.
+     */
+    @Transactional(readOnly = true)
+    public List<HotelResponse> findNearby(double latitude, double longitude, double radiusKm) {
+        var box = GeoDistance.boxAround(latitude, longitude, radiusKm);
+
+        List<Hotel> candidates = hotelRepository.findWithinBoundingBox(
+                box.minLatitude(), box.maxLatitude(), box.minLongitude(), box.maxLongitude());
+
+        Map<Long, Object[]> summary = roomSummaryByHotelId();
+        BigDecimal fromLat = BigDecimal.valueOf(latitude);
+        BigDecimal fromLon = BigDecimal.valueOf(longitude);
+
+        record Scored(Hotel hotel, double distance) {}
+
+        return candidates.stream()
+                .map(hotel -> new Scored(hotel, GeoDistance.kilometresBetween(
+                        hotel.getLatitude(), hotel.getLongitude(), fromLat, fromLon)))
+                // The box is a square around a circle, so its corners reach ~1.41× the radius.
+                // This is where those extra results are dropped.
+                .filter(scored -> scored.distance() <= radiusKm)
+                .sorted(Comparator.comparingDouble(Scored::distance))
+                .map(scored -> {
+                    Object[] row = summary.get(scored.hotel().getId());
+                    return HotelResponse.from(
+                            scored.hotel(),
+                            row == null ? 0L : ((Number) row[2]).longValue(),
+                            row == null ? null : (BigDecimal) row[1],
+                            round1(scored.distance()));
+                })
+                .toList();
+    }
+
+    /** One km decimal place. Sub-100m precision is noise for a hotel search. */
+    private Double round1(Double value) {
+        return value == null ? null : Math.round(value * 10.0) / 10.0;
+    }
+
+    /**
+     * City -> photo of its best-rated hotel.
+     *
+     * <p>First entry wins because the underlying query is ordered by star rating descending, so a
+     * destination card borrows the most flattering image available.
+     */
+    private Map<String, String> representativeImageByCity() {
+        Map<String, String> imageByCity = new HashMap<>();
+        for (Object[] row : hotelRepository.findCityImages()) {
+            imageByCity.putIfAbsent((String) row[0], (String) row[1]);
+        }
+        return imageByCity;
     }
 
     // ── Hotel search ──────────────────────────────────────────────────────────────
@@ -126,6 +229,8 @@ public class HotelService {
                 .city(city)
                 .country(request.country().trim())
                 .address(trimToNull(request.address()))
+                .latitude(request.latitude())
+                .longitude(request.longitude())
                 .description(trimToNull(request.description()))
                 .starRating(request.starRating())
                 .imageUrl(trimToNull(request.imageUrl()))
@@ -154,6 +259,8 @@ public class HotelService {
         hotel.setCity(city);
         hotel.setCountry(request.country().trim());
         hotel.setAddress(trimToNull(request.address()));
+        hotel.setLatitude(request.latitude());
+        hotel.setLongitude(request.longitude());
         hotel.setDescription(trimToNull(request.description()));
         hotel.setStarRating(request.starRating());
         hotel.setImageUrl(trimToNull(request.imageUrl()));

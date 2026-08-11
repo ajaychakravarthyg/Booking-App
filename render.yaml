@@ -1,0 +1,183 @@
+# ─────────────────────────────────────────────────────────────────────────────────
+# Render Blueprint — deploys the four Java services on the free tier.
+#
+# Use: Render Dashboard → New → Blueprint → point at this repo.
+#
+# ⚠ READ THIS BEFORE DEPLOYING
+#
+# Free-tier services SLEEP after ~15 minutes of inactivity and take 30-60s to wake.
+# With microservices those cold starts CHAIN: a single room search can wake the gateway,
+# then booking-service, then room-service — sequentially. Worst case is a couple of
+# minutes on the very first request, not the ~30s a monolith would cost.
+#
+# Mitigations already built in:
+#   • the gateway's Resilience4j time limiter allows 45s per downstream call
+#   • the gateway returns a clear, retryable 503 instead of a raw error (FallbackController)
+#   • the React axios client auto-retries idempotent GETs on 502/503/504
+#   • booking-service ignores 404s when deciding circuit health
+#
+# Recommended additions:
+#   • a cron-job.org / UptimeRobot ping every 10 min against each service's
+#     /actuator/health to keep them awake
+#   • or upgrade the gateway alone to a paid instance, which removes the worst hop
+#
+# The database is NOT defined here — create it separately on Neon or Supabase (both have
+# a genuinely free tier), then paste its connection string into DB_URL below. Render's
+# own free Postgres expires after 30 days.
+# ─────────────────────────────────────────────────────────────────────────────────
+
+services:
+  # ── Service registry ───────────────────────────────────────────────────────────
+  # On Render each service has a stable internal hostname, so Eureka is not strictly
+  # required. It is kept so the deployed topology matches local development.
+  - type: web
+    name: hotel-discovery
+    runtime: docker
+    plan: free
+    region: oregon
+    rootDir: discovery-server
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: SERVER_PORT
+        value: 8761
+      - key: EUREKA_HOSTNAME
+        value: hotel-discovery
+
+  # ── Identity ───────────────────────────────────────────────────────────────────
+  - type: web
+    name: hotel-auth
+    runtime: docker
+    plan: free
+    region: oregon
+    rootDir: auth-service
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /actuator/health/readiness
+    envVars:
+      - key: SERVER_PORT
+        value: 8081
+      - key: SPRING_PROFILES_ACTIVE
+        value: postgres
+      # Paste your Neon/Supabase JDBC URL. Must be the jdbc: form, e.g.
+      # jdbc:postgresql://ep-xxx.us-east-2.aws.neon.tech/hotel?sslmode=require
+      - key: DB_URL
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_SCHEMA
+        value: auth_service
+      # generateValue creates a strong random secret once — but it would differ per
+      # service, and all four MUST share one. So it is set from a Render env GROUP
+      # instead; create the group and attach it to every service below.
+      - key: EUREKA_URL
+        value: https://hotel-discovery.onrender.com/eureka/
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: DB_POOL_MAX
+        value: 3
+    envVarGroups:
+      - hotel-shared
+
+  # ── Room catalog ───────────────────────────────────────────────────────────────
+  - type: web
+    name: hotel-rooms
+    runtime: docker
+    plan: free
+    region: oregon
+    rootDir: room-service
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /actuator/health/readiness
+    envVars:
+      - key: SERVER_PORT
+        value: 8082
+      - key: SPRING_PROFILES_ACTIVE
+        value: postgres
+      - key: DB_URL
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_SCHEMA
+        value: room_service
+      - key: EUREKA_URL
+        value: https://hotel-discovery.onrender.com/eureka/
+      - key: DB_POOL_MAX
+        value: 3
+    envVarGroups:
+      - hotel-shared
+
+  # ── Bookings ───────────────────────────────────────────────────────────────────
+  - type: web
+    name: hotel-bookings
+    runtime: docker
+    plan: free
+    region: oregon
+    rootDir: booking-service
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /actuator/health/readiness
+    envVars:
+      - key: SERVER_PORT
+        value: 8083
+      - key: SPRING_PROFILES_ACTIVE
+        value: postgres
+      - key: DB_URL
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_SCHEMA
+        value: booking_service
+      - key: EUREKA_URL
+        value: https://hotel-discovery.onrender.com/eureka/
+      - key: DB_POOL_MAX
+        value: 3
+    envVarGroups:
+      - hotel-shared
+
+  # ── Public entry point ─────────────────────────────────────────────────────────
+  - type: web
+    name: hotel-gateway
+    runtime: docker
+    plan: free
+    region: oregon
+    rootDir: api-gateway
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /actuator/health/readiness
+    envVars:
+      - key: SERVER_PORT
+        value: 8080
+      - key: EUREKA_URL
+        value: https://hotel-discovery.onrender.com/eureka/
+      # Your Vercel domain(s). The pattern form covers preview deployments.
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: PUBLIC_API_URL
+        value: https://hotel-gateway.onrender.com
+      # Raised from the 45s default: on free tier a cold downstream service plus a cold
+      # database connection can exceed it, and a premature timeout looks like an outage.
+      - key: GATEWAY_TIMEOUT
+        value: 60s
+    envVarGroups:
+      - hotel-shared
+
+# ─────────────────────────────────────────────────────────────────────────────────
+# Shared environment group.
+#
+# JWT_SECRET lives here rather than on each service precisely because it must be the
+# SAME value everywhere — auth-service signs with it, the others verify with it. Setting
+# it per service invites a typo that makes every request 401 with no obvious cause.
+#
+# Create it once in the Render dashboard (Env Groups → hotel-shared) and set:
+#   JWT_SECRET   →  output of `openssl rand -base64 48`
+# ─────────────────────────────────────────────────────────────────────────────────
+envVarGroups:
+  - name: hotel-shared
+    envVars:
+      - key: JWT_SECRET
+        sync: false

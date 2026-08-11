@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0095ff" />
+    <meta
+      name="description"
+      content="Aurora Grand Hotel — browse rooms, check real availability and book your stay."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Aurora Grand — Hotel Room Booking</title>
+    <script>
+      // Applied before first paint so a dark-mode user never sees a white flash.
+      (function () {
+        try {
+          var stored = localStorage.getItem('theme')
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+          if (stored === 'dark' || (!stored && prefersDark)) {
+            document.documentElement.classList.add('dark')
+          }
+        } catch (e) {
+          /* localStorage unavailable (private mode) — fall back to light */
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

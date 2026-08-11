@@ -1,0 +1,83 @@
+# ── Secrets ──────────────────────────────────────────────────────────────────────
+# Never commit real credentials. .env.example is the template that IS committed.
+.env
+.env.local
+.env.*.local
+!.env.example
+*.pem
+*.key
+secrets/
+
+# ── Java / Maven ─────────────────────────────────────────────────────────────────
+target/
+build/
+!**/src/main/**/target/
+!**/src/test/**/target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+!.mvn/wrapper/maven-wrapper.jar
+hs_err_pid*
+replay_pid*
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+dependency-reduced-pom.xml
+
+# ── Gradle (in case a module is ever converted) ───────────────────────────────────
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+
+# ── Node / frontend ──────────────────────────────────────────────────────────────
+node_modules/
+dist/
+dist-ssr/
+build/
+.vite/
+*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.eslintcache
+coverage/
+.nyc_output/
+
+# ── IDE / editors ────────────────────────────────────────────────────────────────
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+!.vscode/extensions.json
+.settings/
+.project
+.classpath
+.factorypath
+*.sublime-workspace
+nbproject/private/
+
+# ── OS ───────────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*~
+
+# ── Logs / runtime ───────────────────────────────────────────────────────────────
+*.log
+logs/
+*.pid
+*.seed
+*.pid.lock
+
+# ── Local tooling ────────────────────────────────────────────────────────────────
+tools/
+apache-maven-*/
+.h2.server.properties

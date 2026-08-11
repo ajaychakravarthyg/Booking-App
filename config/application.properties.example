@@ -1,0 +1,171 @@
+#
+# ─────────────────────────────────────────────────────────────────────────────────
+# Sample application.properties
+#
+# The services actually ship application.yml, because a multi-document YAML file
+# expresses the h2 / postgres profile split far more readably than flat properties can.
+# This file is the equivalent in .properties form for anyone who prefers it, and it
+# doubles as a single reference for every setting the platform reads.
+#
+# To use it: copy the relevant block to <service>/src/main/resources/application.properties
+# and delete that service's application.yml. Spring gives .properties precedence over
+# .yml when both are present, so leaving both in place is confusing — remove one.
+#
+# Every ${VAR:default} below is an environment-variable override with a fallback. The
+# defaults are DEVELOPMENT ONLY.
+# ─────────────────────────────────────────────────────────────────────────────────
+
+# ══ COMMON TO ALL SERVICES ═══════════════════════════════════════════════════════
+
+# Change per service: 8081 auth · 8082 room · 8083 booking · 8080 gateway · 8761 eureka
+server.port=${SERVER_PORT:8081}
+server.shutdown=graceful
+spring.lifecycle.timeout-per-shutdown-phase=20s
+
+# Must match the id the service registers under in Eureka.
+spring.application.name=auth-service
+
+# 'h2' keeps a bare `mvn spring-boot:run` working with no external database.
+# docker-compose and the cloud deployments set this to 'postgres'.
+spring.profiles.active=${SPRING_PROFILES_ACTIVE:h2}
+
+
+# ══ JWT ══════════════════════════════════════════════════════════════════════════
+
+# THE critical value. auth-service signs tokens with it; the gateway, room-service and
+# booking-service verify against it. All four must receive the IDENTICAL string, or
+# every authenticated request returns 401.
+#
+# Minimum 32 characters (256 bits) for HS256 — the services refuse to start otherwise.
+# Generate one with: openssl rand -base64 48
+app.jwt.secret=${JWT_SECRET:dev-only-insecure-jwt-secret-change-me-before-deploying-0123456789}
+
+# auth-service only — the other services never issue a token.
+app.jwt.expiration-seconds=${JWT_EXPIRATION_SECONDS:86400}
+app.jwt.issuer=hotel-booking
+
+
+# ══ PERSISTENCE ══════════════════════════════════════════════════════════════════
+
+spring.jpa.open-in-view=false
+
+# `update` suits a demo. Switch to `validate` and let Flyway own the schema for anything
+# real — see README > Architecture decisions.
+spring.jpa.hibernate.ddl-auto=${DDL_AUTO:update}
+
+# The hard schema boundary. Per service: auth_service | room_service | booking_service.
+# This is what stops one service from seeing another's tables.
+spring.jpa.properties.hibernate.default_schema=${DB_SCHEMA:auth_service}
+spring.jpa.properties.hibernate.jdbc.time_zone=UTC
+
+
+# ══ PROFILE: h2 (local development) ══════════════════════════════════════════════
+# INIT creates the schema, because Hibernate will not create it itself.
+
+#---
+spring.config.activate.on-profile=h2
+spring.datasource.url=jdbc:h2:mem:authdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;INIT=CREATE SCHEMA IF NOT EXISTS auth_service
+spring.datasource.driver-class-name=org.h2.Driver
+spring.datasource.username=sa
+spring.datasource.password=
+spring.h2.console.enabled=true
+spring.h2.console.path=/h2-console
+spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+
+
+# ══ PROFILE: postgres (compose, Neon, Supabase, Render) ══════════════════════════
+
+#---
+spring.config.activate.on-profile=postgres
+spring.datasource.url=${DB_URL:jdbc:postgresql://localhost:5432/hotel_booking}
+spring.datasource.username=${DB_USERNAME:hotel}
+spring.datasource.password=${DB_PASSWORD:hotel}
+spring.datasource.driver-class-name=org.postgresql.Driver
+spring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect
+
+# Small on purpose: three services share one instance, and free managed Postgres caps
+# total connections aggressively.
+spring.datasource.hikari.maximum-pool-size=${DB_POOL_MAX:5}
+spring.datasource.hikari.minimum-idle=1
+spring.datasource.hikari.connection-timeout=30000
+
+
+# ══ SERVICE DISCOVERY (all except discovery-server itself) ═══════════════════════
+
+eureka.client.enabled=${EUREKA_ENABLED:true}
+eureka.client.service-url.defaultZone=${EUREKA_URL:http://localhost:8761/eureka/}
+eureka.instance.prefer-ip-address=true
+
+# Faster convergence than the 30s/90s defaults, which matters when containers restart.
+eureka.instance.lease-renewal-interval-in-seconds=10
+eureka.instance.lease-expiration-duration-in-seconds=30
+
+
+# ══ DISCOVERY-SERVER ONLY ════════════════════════════════════════════════════════
+# A standalone registry must not try to register with, or fetch from, itself.
+
+# eureka.client.register-with-eureka=false
+# eureka.client.fetch-registry=false
+# eureka.instance.hostname=${EUREKA_HOSTNAME:localhost}
+# Self-preservation refuses to evict genuinely dead instances on small deployments.
+# eureka.server.enable-self-preservation=${EUREKA_SELF_PRESERVATION:false}
+
+
+# ══ BOOKING-SERVICE ONLY ═════════════════════════════════════════════════════════
+
+# Caps that stop one request from tying up a room indefinitely.
+# app.booking.max-nights=${BOOKING_MAX_NIGHTS:30}
+# app.booking.max-days-in-advance=${BOOKING_MAX_DAYS_AHEAD:365}
+
+# Routes Feign calls through Resilience4j so RoomClientFallbackFactory is consulted.
+# Without this the fallback is never invoked.
+# spring.cloud.openfeign.circuitbreaker.enabled=true
+# spring.cloud.openfeign.client.config.default.connect-timeout=5000
+# spring.cloud.openfeign.client.config.default.read-timeout=15000
+
+# Static fallback address so lb:// resolves with EUREKA_ENABLED=false. Spring consults
+# Eureka first, so this is never reached when the registry is up.
+# spring.cloud.discovery.client.simple.instances.room-service[0].uri=${ROOM_SERVICE_URL:http://localhost:8082}
+
+
+# ══ GATEWAY ONLY ═════════════════════════════════════════════════════════════════
+
+# The one and only CORS config in the platform — the services all disable theirs, since
+# two sources would emit duplicate headers and browsers reject that.
+# Patterns, not exact origins, so Vercel preview URLs work: https://*.vercel.app
+# spring.cloud.gateway.globalcors.cors-configurations.[/**].allowedOriginPatterns=${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+# spring.cloud.gateway.globalcors.cors-configurations.[/**].allowedMethods=GET,POST,PUT,PATCH,DELETE,OPTIONS
+# spring.cloud.gateway.globalcors.cors-configurations.[/**].allowedHeaders=*
+# The JWT travels in a header, not a cookie, so credentialed requests are unnecessary —
+# and allowing them would forbid wildcard origins.
+# spring.cloud.gateway.globalcors.cors-configurations.[/**].allowCredentials=false
+
+# Long enough to survive a free-tier cold start on a downstream service.
+# resilience4j.timelimiter.configs.default.timeout-duration=${GATEWAY_TIMEOUT:45s}
+
+# Routes are far more readable in YAML; see api-gateway/src/main/resources/application.yml.
+
+
+# ══ SEED DATA ════════════════════════════════════════════════════════════════════
+# Both seeders are idempotent: the admin is skipped if the email exists, and the room
+# catalog is skipped if any room exists.
+
+app.seed.enabled=${SEED_ENABLED:true}
+app.seed.admin.email=${ADMIN_EMAIL:admin@hotel.com}
+app.seed.admin.name=${ADMIN_NAME:Hotel Administrator}
+app.seed.admin.password=${ADMIN_PASSWORD:Admin@12345}
+
+
+# ══ DOCS AND OBSERVABILITY ═══════════════════════════════════════════════════════
+
+app.public-url=${PUBLIC_API_URL:http://localhost:8080}
+
+springdoc.api-docs.path=/v3/api-docs
+springdoc.swagger-ui.path=/swagger-ui.html
+springdoc.swagger-ui.operations-sorter=method
+
+management.endpoints.web.exposure.include=health,info,metrics
+management.endpoint.health.probes.enabled=true
+management.endpoint.health.show-details=when-authorized
+
+logging.level.com.hotelbooking=${LOG_LEVEL:INFO}

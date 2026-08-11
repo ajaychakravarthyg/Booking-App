@@ -1,0 +1,187 @@
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+
+spring:
+  application:
+    name: api-gateway
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          # Explicit routes only. Auto-routing every registered service would expose
+          # internal endpoints publicly the moment a new service joins the registry.
+          enabled: false
+
+      globalcors:
+        # The one and only CORS configuration in the platform — the services all disable
+        # theirs, since two sources would emit duplicate headers and browsers reject that.
+        add-to-simple-url-handler-mapping: true
+        cors-configurations:
+          '[/**]':
+            # Patterns rather than exact origins so Vercel preview deployments
+            # (https://<branch>-<project>.vercel.app) work without a redeploy per branch.
+            allowedOriginPatterns: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:4173,http://localhost:3000}
+            allowedMethods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+            allowedHeaders: "*"
+            exposedHeaders: [Authorization, Retry-After]
+            # The JWT travels in the Authorization header, not a cookie, so credentialed
+            # requests are unnecessary — and allowing them would forbid wildcard origins.
+            allowCredentials: false
+            maxAge: 3600
+
+      default-filters:
+        # Belt and braces: collapse any header a misconfigured service duplicates.
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_UNIQUE
+
+      routes:
+        # ── auth-service ──────────────────────────────────────────────────────────
+        - id: auth-service
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/auth/**,/api/users/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: authServiceCircuitBreaker
+                fallbackUri: forward:/fallback/auth
+
+        # ── room-service ──────────────────────────────────────────────────────────
+        - id: room-service
+          uri: lb://room-service
+          predicates:
+            - Path=/api/rooms/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: roomServiceCircuitBreaker
+                fallbackUri: forward:/fallback/rooms
+
+        # ── booking-service ───────────────────────────────────────────────────────
+        - id: booking-service
+          uri: lb://booking-service
+          predicates:
+            - Path=/api/bookings/**
+          filters:
+            - name: CircuitBreaker
+              args:
+                name: bookingServiceCircuitBreaker
+                fallbackUri: forward:/fallback/bookings
+
+        # ── Aggregated OpenAPI documents ──────────────────────────────────────────
+        # Each service's spec is proxied so the gateway's Swagger UI can offer all three
+        # from one origin, with no CORS involved.
+        - id: auth-service-docs
+          uri: lb://auth-service
+          predicates:
+            - Path=/api-docs/auth/**
+          filters:
+            - RewritePath=/api-docs/auth(?<segment>/?.*), /v3/api-docs$\{segment}
+
+        - id: room-service-docs
+          uri: lb://room-service
+          predicates:
+            - Path=/api-docs/rooms/**
+          filters:
+            - RewritePath=/api-docs/rooms(?<segment>/?.*), /v3/api-docs$\{segment}
+
+        - id: booking-service-docs
+          uri: lb://booking-service
+          predicates:
+            - Path=/api-docs/bookings/**
+          filters:
+            - RewritePath=/api-docs/bookings(?<segment>/?.*), /v3/api-docs$\{segment}
+
+app:
+  jwt:
+    # Verification only. MUST match auth-service's JWT_SECRET byte for byte.
+    secret: ${JWT_SECRET:dev-only-insecure-jwt-secret-change-me-before-deploying-0123456789}
+
+resilience4j:
+  timelimiter:
+    configs:
+      default:
+        # Long enough to survive a free-tier cold start on the downstream service, which
+        # can take 30s or more. Too short here and every first request of the day fails.
+        timeout-duration: ${GATEWAY_TIMEOUT:45s}
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 60
+        wait-duration-in-open-state: 20s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+
+eureka:
+  client:
+    enabled: ${EUREKA_ENABLED:true}
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
+
+springdoc:
+  api-docs:
+    # Must stay enabled: switching it off also unregisters springdoc's Swagger UI
+    # routes, leaving /swagger-ui.html on a 404 even though the proxied specs resolve.
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    # One dropdown listing every service's API, all served from this origin.
+    urls:
+      - name: auth-service
+        url: /api-docs/auth
+      - name: room-service
+        url: /api-docs/rooms
+      - name: booking-service
+        url: /api-docs/bookings
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+    gateway:
+      access: read-only
+
+logging:
+  level:
+    com.hotelbooking.gateway: ${LOG_LEVEL:INFO}
+    org.springframework.cloud.gateway: ${GATEWAY_LOG_LEVEL:INFO}
+
+---
+# ── Running without Eureka (plain `mvn spring-boot:run` on a laptop) ────────────
+# Activate with: SPRING_PROFILES_ACTIVE=nodiscovery
+# Static instance addresses so lb:// still resolves with the registry switched off.
+spring:
+  config:
+    activate:
+      on-profile: nodiscovery
+  cloud:
+    discovery:
+      client:
+        simple:
+          instances:
+            auth-service:
+              - uri: ${AUTH_SERVICE_URL:http://localhost:8081}
+            room-service:
+              - uri: ${ROOM_SERVICE_URL:http://localhost:8082}
+            booking-service:
+              - uri: ${BOOKING_SERVICE_URL:http://localhost:8083}
+
+eureka:
+  client:
+    enabled: false

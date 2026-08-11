@@ -1,0 +1,136 @@
+server:
+  port: ${SERVER_PORT:8083}
+  shutdown: graceful
+
+spring:
+  application:
+    name: booking-service
+  profiles:
+    # 'h2' keeps a bare `mvn spring-boot:run` working with zero setup.
+    # docker-compose and the cloud deployments set SPRING_PROFILES_ACTIVE=postgres.
+    active: ${SPRING_PROFILES_ACTIVE:h2}
+  jpa:
+    open-in-view: false
+    hibernate:
+      # Convenient for a portfolio project. A production rollout should switch this to
+      # `validate` and let Flyway own the schema — see README > Database migrations.
+      ddl-auto: ${DDL_AUTO:update}
+    properties:
+      hibernate:
+        # Hard schema boundary: this service can only see its own tables.
+        default_schema: ${DB_SCHEMA:booking_service}
+        jdbc:
+          time_zone: UTC
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  cloud:
+    openfeign:
+      # Routes every Feign call through Resilience4j so RoomClientFallbackFactory is
+      # actually consulted. Without this the fallback is never invoked.
+      circuitbreaker:
+        enabled: true
+      client:
+        config:
+          default:
+            connect-timeout: 5000
+            read-timeout: 15000
+            logger-level: basic
+
+app:
+  jwt:
+    # Verification only — this service never issues a token. The value MUST be
+    # byte-identical to auth-service's JWT_SECRET or every token will be rejected.
+    secret: ${JWT_SECRET:dev-only-insecure-jwt-secret-change-me-before-deploying-0123456789}
+  public-url: ${PUBLIC_API_URL:http://localhost:8080}
+  booking:
+    # Caps that stop one request from tying up a room indefinitely.
+    max-nights: ${BOOKING_MAX_NIGHTS:30}
+    max-days-in-advance: ${BOOKING_MAX_DAYS_AHEAD:365}
+
+eureka:
+  client:
+    enabled: ${EUREKA_ENABLED:true}
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+    # Faster registry convergence than the 30s/90s defaults, which matters when
+    # containers restart during local development.
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 30
+
+resilience4j:
+  circuitbreaker:
+    metrics:
+      enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized
+
+logging:
+  level:
+    com.hotelbooking.booking: ${LOG_LEVEL:INFO}
+
+---
+# ── Local development: in-memory H2, no external database required ──────────────
+spring:
+  config:
+    activate:
+      on-profile: h2
+  datasource:
+    # INIT creates the service's schema, since Hibernate will not create it itself.
+    url: "jdbc:h2:mem:bookingdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;INIT=CREATE SCHEMA IF NOT EXISTS booking_service"
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+  cloud:
+    discovery:
+      client:
+        # Static fallback so `mvn spring-boot:run` works with EUREKA_ENABLED=false.
+        # Spring composes the discovery clients and consults Eureka first, so when the
+        # registry IS running this entry is simply never reached.
+        simple:
+          instances:
+            room-service:
+              - uri: ${ROOM_SERVICE_URL:http://localhost:8082}
+
+---
+# ── Postgres: docker-compose, Neon, Supabase, Render ───────────────────────────
+spring:
+  config:
+    activate:
+      on-profile: postgres
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/hotel_booking}
+    username: ${DB_USERNAME:hotel}
+    password: ${DB_PASSWORD:hotel}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      # Managed free-tier Postgres caps total connections aggressively, and five
+      # services sharing one instance exhausts it fast. Keep each pool small.
+      maximum-pool-size: ${DB_POOL_MAX:5}
+      minimum-idle: 1
+      connection-timeout: 30000
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
